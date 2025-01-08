@@ -489,7 +489,7 @@ def create_attention_mask_predict_next(sequence, pad_id=128256, soi_id=128257, e
     is_text_image = is_text | in_image_segment
 
     mask_text_image_bi = is_text_image[:, :, None] * is_text_image[:, None, :]
-    if rm_pad_in_image:
+    if rm_pad_in_image:  # remove padding token in image
         sid_img = torch.where(sequence == soi_id)[1]
         for i in range(mask_text_image_bi.shape[0]):
             pad_end_idx = torch.where(sequence[i] == pad_id)
@@ -613,7 +613,7 @@ def create_attention_mask_for_mmu_vit(
     index = 1 + system_prompt_len + 1 + 576
     # PART OF SYSTEM PROMPT SHOULD BE CAUSAL ALSO
     # causal_mask[:, :, :, :index] = 1
-    causal_mask[:, :, :, 1+system_prompt_len+1:index] = 1
+    causal_mask[:, :, :, 1+system_prompt_len+1:index] = 1  # 把image token对应的列attention全部置为1
     if return_inverse_mask:
         inverted_mask = 1.0 - causal_mask.type(torch.int64)
         inverted_mask = inverted_mask.masked_fill(

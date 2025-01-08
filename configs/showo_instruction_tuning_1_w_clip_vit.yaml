@@ -35,18 +35,17 @@ model:
     gradient_checkpointing: True
 
 dataset:
-    gen_type: "t2i"
+    gen_type: "t2i_fashion"
     und_type: "llava_pretrain"
     combined_loader_mode: "min_size"
     params:
-        train_t2i_shards_path_or_url: [ "/mnt/bn/vgfm/laion5b/laion-aesthetics-12m-images/{00000..01209}.tar",
-                                      "/mnt/bn/vgfm/JourneyDB/JourneyDB/data/train/imgs/{000..199}.tgz" ]
+        train_t2i_shards_path_or_url: "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore/image/291x291"
         train_mmu_shards_path_or_url: [ "/mnt/bn/vgfm2/test_mlx/xavier/data/SA1B2/sa_{000000..000999}.tar",
                                         "/mnt/bn/vgfm/cc12m/images/{00000..01242}.tar",
                                         "/mnt/bn/vgfm/laion5b/laion-aesthetics-12m-images/{00000..01209}.tar" ]
-        train_lm_shards_path_or_url: "/mnt/bn/vgfm2/test_mlx/xavier/data/falcon-refinedweb/data/*.parquet"
+        train_lm_shards_path_or_url: "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/falcon-refinedweb/data/*.parquet"
         add_caption_prompt: True
-        external_caption_path: "/mnt/bn/vgfm2/test_mlx/xavier/data/SAM-LLaVA-Captions10M"
+        external_caption_path: "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore/all_item_image_descriptions.npy"
         external_journeydb_caption_path: "/mnt/bn/vgfm2/test_mlx/xavier/code/3062/open_muse/train_journeydb_anno.json"
         external_laion12m_caption_path: "/mnt/bn/vgfm/laion5b/laion-aesthetics-12m-captions"
         external_cc12m_caption_path: '/mnt/bn/vgfm/cc12m/captions/'

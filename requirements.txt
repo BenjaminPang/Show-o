@@ -210,7 +210,7 @@ urllib3==1.26.18
 velruse==1.1.1
 venusian==3.1.0
 virtualenv==20.26.2
-wandb==0.17.0
+wandb==0.17.2
 watchdog==4.0.1
 wcwidth==0.2.13
 webdataset==0.2.86

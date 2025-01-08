@@ -1,0 +1,13 @@
+# 创建 .gitignore 文件
+echo '# PyCharm
+.idea/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Output directory
+output/
+
+wandb/

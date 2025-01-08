@@ -39,7 +39,7 @@ from accelerate.utils import DistributedType, set_seed
 
 from training.data import Text2ImageDataset
 from training.imagenet_dataset import ImageNetDataset
-from parquet import RefinedWebDataset
+# from parquet import RefinedWebDataset
 
 from models import Showo, MAGVITv2, get_mask_chedule
 from training.prompting_utils import UniversalPrompting, create_attention_mask_predict_next, \

@@ -12,7 +12,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 
-from llava.llava import conversation as conversation_lib
+from llava import conversation as conversation_lib
 
 DEFAULT_IMAGE_TOKEN = "<image>"
 IGNORE_INDEX = -100
@@ -266,7 +266,7 @@ def get_instruct_data_loader(
 
 if __name__ == '__main__':
     import transformers
-    pretrained_model_path = '/mnt/bn/vgfm2/test_mlx/xavier/pretrained_weights/phi-1_5'
+    pretrained_model_path = 'microsoft/phi-1_5'
     tokenizer = transformers.AutoTokenizer.from_pretrained(pretrained_model_path,
                                                            padding_side="left")
     special_tokens = ("soi", "eoi", "sovi", "eovi", "t2i", "mmu", "t2v", "v2v", "lvg")

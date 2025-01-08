@@ -272,7 +272,7 @@ def main():
 
     total_batch_size_t2i_without_accum = config.training.batch_size_t2i * accelerator.num_processes
     total_batch_size_t2i = (
-            config.training.batch_size_t2i * accelerator.num_processes * config.training.gradient_accumulation_steps
+        config.training.batch_size_t2i * accelerator.num_processes * config.training.gradient_accumulation_steps
     )
 
     # DataLoaders creation:
@@ -305,7 +305,6 @@ def main():
         num_update_steps_per_epoch = math.ceil(
             train_dataloader_t2i.num_batches / config.training.gradient_accumulation_steps)
         num_train_epochs = math.ceil(config.training.max_train_steps / num_update_steps_per_epoch)
-
     elif config.dataset.gen_type == "imagenet1k":
         dataset_imagenet = ImageNetDataset(
             dataset_config.train_t2i_shards_path_or_url,
@@ -331,6 +330,33 @@ def main():
                                           sampler=sampler, collate_fn=dataset_imagenet.collate_fn,
                                           shuffle=shuffle, num_workers=dataset_config.num_workers)
         num_update_steps_per_epoch = math.ceil(len(dataset_imagenet) / total_batch_size_t2i)
+        num_train_epochs = math.ceil(config.training.max_train_steps / num_update_steps_per_epoch)
+    elif config.dataset.gen_type == "t2i_fashion":
+        from fashion_data import FashionDataset
+        dataset = FashionDataset(
+            root=dataset_config.train_t2i_shards_path_or_url,
+            caption_file_path=dataset_config.external_caption_path,
+        )
+        if accelerator.num_processes > 1:
+            sampler = DistributedSampler(
+                dataset,
+                num_replicas=accelerator.num_processes,
+                rank=accelerator.process_index,
+                shuffle=True,
+            )
+            shuffle = False
+        else:
+            sampler = None
+            shuffle = True
+        train_dataloader_t2i = DataLoader(
+            dataset,
+            batch_size=config.training.batch_size_t2i,
+            sampler=sampler,
+            shuffle=shuffle,
+            num_workers=dataset_config.num_workers
+        )
+        num_update_steps_per_epoch = math.ceil(
+            len(dataset) / config.training.gradient_accumulation_steps)
         num_train_epochs = math.ceil(config.training.max_train_steps / num_update_steps_per_epoch)
 
     else:
@@ -530,10 +556,10 @@ def main():
                 # TODO: check image pre-process
                 images_feat = vision_tower(pixel_values_mmu).to(images_feat_dtype)
                 if hasattr(model, 'module'):
-                    images_embeddings = model.module.mm_projector(images_feat)
+                    images_embeddings = model.module.mm_projector(images_feat.to(torch.float32))
                     text_embeddings = model.module.showo.model.embed_tokens(input_ids_mmu)
                 else:
-                    images_embeddings = model.mm_projector(images_feat)
+                    images_embeddings = model.mm_projector(images_feat.to(torch.float32))
                     text_embeddings = model.showo.model.embed_tokens(input_ids_mmu)
                 part1 = text_embeddings[:, :2, :]
                 part2 = text_embeddings[:, 2:, :]

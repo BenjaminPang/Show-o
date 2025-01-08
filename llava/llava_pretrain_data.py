@@ -1,11 +1,12 @@
 import copy
-import json
+import random
 import os
 from functools import partial
 
+import numpy as np
 import torch
 from PIL import Image
-from llava.llava import conversation as conversation_lib
+from llava import conversation as conversation_lib
 from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from transformers import CLIPImageProcessor
@@ -13,6 +14,7 @@ from transformers import CLIPImageProcessor
 DEFAULT_IMAGE_TOKEN = "<image>"
 IGNORE_INDEX = -100
 conversation_lib.default_conversation = conversation_lib.conv_templates["plain"]
+
 
 def preprocess_multimodal(sources):
     for source in sources:
@@ -61,15 +63,35 @@ class LLaVAPretrainCaptioningDataset(Dataset):
 
         self.tokenizer = tokenizer
 
-        data_file_path = "/mnt/bn/vgfm2/test_dit/blip_laion_cc_sbu_558k.json"
-        self.image_root = "/mnt/bn/vgfm2/test_dit/pretraining_data"
+        data_file_path = "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore/all_item_image_descriptions.npy"
+        self.image_root = "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore/image/291x291"
+        brief_description_prompts = [
+            "Describe the image concisely.",
+            "Provide a brief description of the given image.",
+            "Offer a succinct explanation of the picture presented.",
+            "Summarize the visual content of the image.",
+            "Give a short and clear explanation of the subsequent image.",
+            "Share a concise interpretation of the image provided.",
+            "Present a compact description of the photo's key features.",
+            "Relay a brief, clear account of the picture shown.",
+            "Render a clear and concise summary of the photo.",
+            "Write a terse but informative summary of the picture.",
+            "Create a compact narrative representing the image presented."
+        ]
 
-        with open(data_file_path, 'r') as f:
-            data = json.load(f)
+        data = np.load(data_file_path, allow_pickle=True).item()
         self.list_data_dict = []
-        for item in data:
-            if 'image' in item.keys():
-                self.list_data_dict.append(item)
+        for image_filename, description in data.items():
+            if image_filename == 'empty_image.png':  # First image is an empty image, so we remove it
+                continue
+            sample = {
+                "image": image_filename,
+                "conversations": [
+                    {"from": "human", "value": random.choice(brief_description_prompts)},
+                    {"from": "gpt", "value": description}
+                ]
+            }
+            self.list_data_dict.append(sample)
 
         self.processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-large-patch14-336")
 
@@ -90,7 +112,10 @@ class LLaVAPretrainCaptioningDataset(Dataset):
         image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
         image = self.processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
 
-        sources = preprocess_multimodal(copy.deepcopy([e["conversations"] for e in sources]))
+        # This operation manually remove <image> token from value.
+        # Since we didn't add it in source data, we do not need to invoke preprocess_multimodal function.
+        # sources = preprocess_multimodal(copy.deepcopy([e["conversations"] for e in sources]))
+        sources = copy.deepcopy([e["conversations"] for e in sources])
 
         data_dict = preprocess_plain(sources, self.tokenizer)
 
@@ -181,14 +206,20 @@ def get_plain_data_loader(
 
 if __name__ == '__main__':
     import transformers
-    pretrained_model_path = '/mnt/bn/vgfm2/test_mlx/xavier/pretrained_weights/phi-1_5'
+    pretrained_model_path = "microsoft/phi-1_5"
     tokenizer = transformers.AutoTokenizer.from_pretrained(pretrained_model_path,
                                                            padding_side="left")
     special_tokens = ("soi", "eoi", "sovi", "eovi", "t2i", "mmu", "t2v", "v2v", "lvg")
     tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     tokenizer.add_tokens(list(special_tokens))
 
-    dataset = LLaVAPretrainCaptioningDataset(tokenizer)
-
-    dataset.__getitem__(0)
-
+    train_dataloader_mmu = get_plain_data_loader(
+        tokenizer,
+        batch_size=10,
+        num_workers=0,
+        world_size=1,
+        local_rank=0,
+        max_length=512 - (576 - 256),
+    )
+    a = next(iter(train_dataloader_mmu))
+    x = 1
