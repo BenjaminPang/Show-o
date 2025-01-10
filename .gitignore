@@ -11,3 +11,6 @@ __pycache__/
 output/
 
 wandb/
+
+logs/*
+!logs/.gitkeep
