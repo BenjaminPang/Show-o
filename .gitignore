@@ -14,3 +14,5 @@ wandb/
 
 logs/*
 !logs/.gitkeep
+
+show-o-tuning-stage1-w-clip-vit/config.yaml
