@@ -367,6 +367,8 @@ def main():
         from llava.llava_pretrain_data import get_plain_data_loader
         train_dataloader_mmu = get_plain_data_loader(
             tokenizer,
+            data_file_path=dataset_config.external_caption_path,
+            image_root=dataset_config.train_t2i_shards_path_or_url,
             batch_size=config.training.batch_size_mmu,
             num_workers=dataset_config.num_workers,
             world_size=accelerator.num_processes,

@@ -51,7 +51,7 @@ dataset:
         external_cc12m_caption_path: '/mnt/bn/vgfm/cc12m/captions/'
         validation_prompts_file: "validation_prompts/showoprompts.txt"
         shuffle_buffer_size: 1000
-        num_workers: 32
+        num_workers: 1
         resolution: 256
         pin_memory: True
         persistent_workers: True
@@ -81,9 +81,9 @@ lr_scheduler:
 training:
     gradient_accumulation_steps: 1
     noise_type: "mask"
-    batch_size_t2i: 2
-    batch_size_lm: 2
-    batch_size_mmu: 10
+    batch_size_t2i: 1
+    batch_size_lm: 1
+    batch_size_mmu: 2
     mixed_precision: "bf16"
     enable_tf32: True
     seed: 10086

@@ -58,13 +58,12 @@ def preprocess_plain(sources, tokenizer):
 
 class LLaVAPretrainCaptioningDataset(Dataset):
 
-    def __init__(self, tokenizer):
+    def __init__(self, tokenizer, data_file_path, image_root):
         super(LLaVAPretrainCaptioningDataset, self).__init__()
 
         self.tokenizer = tokenizer
 
-        data_file_path = "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore/all_item_image_descriptions.npy"
-        self.image_root = "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore/image/291x291"
+        self.image_root = image_root
         brief_description_prompts = [
             "Describe the image concisely.",
             "Provide a brief description of the given image.",
@@ -180,13 +179,15 @@ def collate_fn(
 
 def get_plain_data_loader(
         tokenizer,
+        data_file_path,
+        image_root,
         batch_size,
         num_workers,
         world_size,
         local_rank,
         max_length,
 ):
-    train_dataset = LLaVAPretrainCaptioningDataset(tokenizer)
+    train_dataset = LLaVAPretrainCaptioningDataset(tokenizer, data_file_path, image_root)
     datasampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
     dataloader = torch.utils.data.DataLoader(
         train_dataset,
