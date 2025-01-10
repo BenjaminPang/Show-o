@@ -83,7 +83,7 @@ training:
     noise_type: "mask"
     batch_size_t2i: 1
     batch_size_lm: 1
-    batch_size_mmu: 2
+    batch_size_mmu: 4
     mixed_precision: "bf16"
     enable_tf32: True
     seed: 10086
