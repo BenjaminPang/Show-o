@@ -12,7 +12,12 @@ output/
 
 wandb/
 
+generated_images/
+
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
 logs/*
 !logs/.gitkeep
 
-show-o-tuning-stage1-w-clip-vit/config.yaml
+show-o-tuning-stage1-w-clip-vit/

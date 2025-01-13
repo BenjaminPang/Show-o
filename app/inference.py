@@ -24,6 +24,8 @@ class ShowoModel:
 
         #param for t2i
         self.save_dir = "generated_images"
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
         self.config.training.batch_size = 2
         self.config.training.guidance_scale = 5
         self.config.training.generation_timesteps = 50
