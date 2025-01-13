@@ -6,7 +6,7 @@ wandb:
 experiment:
     project: "tuning"
     name: "show-o-tuning-stage1-w-clip-vit"
-    output_dir: "show-o-tuning-stage1-w-clip-vit"
+    output_dir: "outputs/show-o-tuning-stage1-w-clip-vit"
     max_train_examples_t2i: 20000000
     max_train_examples_mmu: 40000000
     save_every: 10000
@@ -81,9 +81,9 @@ lr_scheduler:
 training:
     gradient_accumulation_steps: 1
     noise_type: "mask"
-    batch_size_t2i: 2
-    batch_size_lm: 2
-    batch_size_mmu: 10
+    batch_size_t2i: 1
+    batch_size_lm: 1
+    batch_size_mmu: 1
     mixed_precision: "bf16"
     enable_tf32: True
     seed: 10086

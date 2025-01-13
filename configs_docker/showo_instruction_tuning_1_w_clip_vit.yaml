@@ -6,7 +6,7 @@ wandb:
 experiment:
     project: "tuning"
     name: "show-o-tuning-stage1-w-clip-vit"
-    output_dir: "show-o-tuning-stage1-w-clip-vit"
+    output_dir: "outputs/show-o-tuning-stage1-w-clip-vit"
     max_train_examples_t2i: 20000000
     max_train_examples_mmu: 40000000
     save_every: 10000
@@ -14,7 +14,7 @@ experiment:
     generate_every: 1000
     log_every: 50
     log_grad_norm_every: 500
-    resume_from_checkpoint: 'latest'
+    resume_from_checkpoint: null
 
 model:
     vq_model:
@@ -22,7 +22,7 @@ model:
         vq_model_name: "showlab/magvitv2"
 
     showo:
-        load_from_showo: False
+        load_from_showo: True
         pretrained_model_path: "showlab/show-o-w-clip-vit"
         w_clip_vit: True
         vocab_size: 58498
@@ -87,7 +87,7 @@ training:
     mixed_precision: "bf16"
     enable_tf32: True
     seed: 10086
-    max_train_steps: 10000
+    max_train_steps: 30000
     overfit_one_batch: False
     cond_dropout_prob: 0.1
     min_masking_rate: 0.0

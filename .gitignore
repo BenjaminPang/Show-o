@@ -20,4 +20,6 @@ generated_images/
 logs/*
 !logs/.gitkeep
 
+outputs/
+
 show-o-tuning-stage1-w-clip-vit/
