@@ -184,8 +184,8 @@ class FashionItemPredictionDataset(Dataset):
         self.all_image_path = np.load(os.path.join(data_path, "all_item_image_paths.npy"), allow_pickle=True)
         self.all_item_descriptions = np.load(os.path.join(data_path, "all_item_image_descriptions.npy"), allow_pickle=True).item()
         self.samples = []
-        for uid, oid, outfit in itertools.islice(zip(self.train['uids'], self.train['oids'], self.train["outfits"]), 20):
-        # for uid, oid, outfit in zip(self.train['uids'], self.train['oids'], self.train["outfits"]):
+        # for uid, oid, outfit in itertools.islice(zip(self.train['uids'], self.train['oids'], self.train["outfits"]), 20):
+        for uid, oid, outfit in zip(self.train['uids'], self.train['oids'], self.train["outfits"]):
             # 预先计算常用的映射
             iid_to_cate = {iid: self.iid_cate_dict[iid] for iid in outfit}
             iid_to_cate_str = {iid: self.id_cate_dict[self.iid_cate_dict[iid]] for iid in outfit}
