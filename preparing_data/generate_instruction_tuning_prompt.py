@@ -294,7 +294,7 @@ if __name__ == '__main__':
             json_data = json.load(f)
         errors = [x['id'] for x in json_data]
 
-    batch_size = 10
+    batch_size = 5000
     start_time = time.time()
 
     for i, sample in enumerate(tqdm(dataset)):
