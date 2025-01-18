@@ -173,7 +173,7 @@ class FashionItemPredictionDataset(Dataset):
         Each outfit with n items can generate multiple training samples depending on
         different combinations of incomplete outfits and ground truth selections.
     """
-    def __init__(self, data_path, tokenizer):
+    def __init__(self, data_path, tokenizer, n_incomplete=1):
         self.tokenizer = tokenizer
         image_path = os.path.join(data_path, 'image/291x291')  # Polyvore dataset case
         self.fashion_categories = FashionCategories()
@@ -191,30 +191,30 @@ class FashionItemPredictionDataset(Dataset):
             iid_to_cate_str = {iid: self.id_cate_dict[self.iid_cate_dict[iid]] for iid in outfit}
             iid_to_image_path = {iid: self.all_image_path[iid] for iid in outfit}
             iid_to_desc = {iid: self.all_item_descriptions[self.all_image_path[iid]] for iid in outfit}
-            for n_removes in range(1, len(outfit)):  # 1, 2, 3
-                for items_to_remove in itertools.combinations(outfit, n_removes):
-                    outfit_copy = set(outfit) - set(items_to_remove)
-                    for target_item in items_to_remove:
-                        incomplete_outfit_cate_str = [iid_to_cate_str[iid] for iid in outfit_copy]
-                        target_image_path = iid_to_image_path[target_item]
-                        sample = {
-                            'id': generate_sample_id(uid, oid, list(outfit_copy), target_item),
-                            'uid': uid,
-                            'oid': oid,
-                            # 'incomplete_outfit_id': list(outfit_copy),
-                            'incomplete_outfit_path': [iid_to_image_path[iid] for iid in outfit_copy],
-                            'incomplete_outfit_description': [iid_to_desc[iid] for iid in outfit_copy],
-                            # 'incomplete_outfit_cate': [iid_to_cate[iid] for iid in outfit_copy],
-                            # 'incomplete_outfit_cate_str': [iid_to_cate_str[iid] for iid in outfit_copy],
-                            # 'target_id': target_item,
-                            # 'target_cate': iid_to_cate[target_item],
-                            'target_cate_str': iid_to_cate_str[target_item],
-                            'target_image_path': target_image_path,
-                            'target_description': iid_to_desc[target_item],
-                            'weight': self._calculate_weight(incomplete_outfit_cate_str, len(items_to_remove))
-                        }
-                        if sample['weight'] > 0.0:
-                            self.samples.append(sample)
+            n_removes = len(outfit) - n_incomplete
+            for items_to_remove in itertools.combinations(outfit, n_removes):
+                outfit_copy = set(outfit) - set(items_to_remove)
+                for target_item in items_to_remove:
+                    incomplete_outfit_cate_str = [iid_to_cate_str[iid] for iid in outfit_copy]
+                    target_image_path = iid_to_image_path[target_item]
+                    sample = {
+                        'id': generate_sample_id(uid, oid, list(outfit_copy), target_item),
+                        'uid': uid,
+                        'oid': oid,
+                        # 'incomplete_outfit_id': list(outfit_copy),
+                        'incomplete_outfit_path': [iid_to_image_path[iid] for iid in outfit_copy],
+                        'incomplete_outfit_description': [iid_to_desc[iid] for iid in outfit_copy],
+                        # 'incomplete_outfit_cate': [iid_to_cate[iid] for iid in outfit_copy],
+                        # 'incomplete_outfit_cate_str': [iid_to_cate_str[iid] for iid in outfit_copy],
+                        # 'target_id': target_item,
+                        # 'target_cate': iid_to_cate[target_item],
+                        'target_cate_str': iid_to_cate_str[target_item],
+                        'target_image_path': target_image_path,
+                        'target_description': iid_to_desc[target_item],
+                        'weight': self._calculate_weight(incomplete_outfit_cate_str, len(items_to_remove))
+                    }
+                    if sample['weight'] > 0.0:
+                        self.samples.append(sample)
 
     def _calculate_weight(self, incomplete_outfit_cate_str: List[str], n_removes: int):
         """
@@ -276,17 +276,19 @@ if __name__ == '__main__':
     # responses = tokenizer.batch_decode(outputs, skip_special_tokens=True)
     # print(responses)
 
+    n_incomplete = 3
     dataset = FashionItemPredictionDataset(
         data_path=os.path.join(working_dir, "datasets/polyvore"),
-        tokenizer=None
+        tokenizer=None,
+        n_incomplete=n_incomplete,
     )
 
     # 加载检查点
-    result_output_path = os.path.join(working_dir, "datasets/polyvore/instruct", "fashion_recommendation_qa.json")
+    result_output_path = os.path.join(working_dir, "datasets/polyvore/instruct", f"fashion_recommendation_qa_{n_incomplete}.json")
     results, processed_ids = load_checkpoint(result_output_path)
 
     # 创建错误日志文件
-    error_log_path = os.path.join(working_dir, "datasets/polyvore/instruct/error_log.json")
+    error_log_path = os.path.join(working_dir, f"datasets/polyvore/instruct/error_log.json")
     if not os.path.exists(error_log_path):
         errors = []
     else:
@@ -381,7 +383,7 @@ if __name__ == '__main__':
 
         # 每处理batch_size个样本保存一次
         if (i + 1) % batch_size == 0:
-            save_checkpoint(results, os.path.join(working_dir, "datasets/polyvore/instruct"), "fashion_recommendation_qa.json")
+            save_checkpoint(results, os.path.join(working_dir, "datasets/polyvore/instruct"), f"fashion_recommendation_qa_{n_incomplete}.json")
 
             # 保存错误日志
             with open(error_log_path, 'w', encoding='utf-8') as f:
