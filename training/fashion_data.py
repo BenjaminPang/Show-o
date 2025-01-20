@@ -1,12 +1,14 @@
 import os
 import json
 from functools import partial
+import math
 
 import numpy as np
 from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from PIL import Image
 import torch
+from omegaconf import ListConfig
 
 from training.utils import image_transform
 from llava import conversation as conversation_lib
@@ -34,21 +36,19 @@ class FashionDataset(Dataset):
     def __init__(
             self,
             root: str,
-            caption_file_path: str,
-            image_size=256,
+            resolution=256,
     ):
-        self.root = root
-        self.captions = np.load(caption_file_path, allow_pickle=True).item()
+        self.image_dir = os.path.join(root, "image/291x291")
+        self.captions = np.load(os.path.join(root, "all_item_image_descriptions.npy"), allow_pickle=True).item()
         self.captions = [(k, v) for k, v in self.captions.items() if k != "empty_image.png"]  # remove empty image
-        self.transform = image_transform
-        self.image_size = image_size
+        self.resolution = resolution
 
     def __getitem__(self, idx):
         try:
             image_path, caption = self.captions[idx]
 
-            image = Image.open(os.path.join(self.root, image_path)).convert('RGB')
-            image = self.transform(image, resolution=self.image_size)
+            image = Image.open(os.path.join(self.image_dir, image_path)).convert('RGB')
+            image = image_transform(image, resolution=self.resolution)
 
             return {'images': image, 'input_ids': caption}
 
@@ -173,12 +173,23 @@ class FashionItemPredictionDataset(Dataset):
         Each outfit with n items can generate multiple training samples depending on
         different combinations of incomplete outfits and ground truth selections.
     """
-    def __init__(self, data_path, tokenizer):
+    def __init__(self, root_dir, data_file_path, tokenizer, resolution=512):
         self.tokenizer = tokenizer
-        self.transform = image_transform
-        self.image_dir = os.path.join(data_path, 'image/291x291')  # Polyvore dataset case
-        with open(os.path.join(data_path, 'instruct/fashion_recommendation_qa.json')) as f:
-            self.samples = json.load(f)
+        self.resolution = resolution
+        self.image_dir = os.path.join(root_dir, 'image/291x291')  # Polyvore dataset case
+
+        self.merged_image_dir = os.path.join(root_dir, "image/instruct")
+        if not os.path.exists(self.merged_image_dir):
+            os.makedirs(self.merged_image_dir)
+
+        if isinstance(data_file_path, str):
+            with open(data_file_path) as f:
+                self.samples = json.load(f)
+        elif isinstance(data_file_path, (list, tuple, ListConfig)):
+            self.samples = []
+            for file_path in data_file_path:
+                with open(file_path) as f:
+                    self.samples.extend(json.load(f))
 
     def __len__(self):
         return len(self.samples)
@@ -189,10 +200,21 @@ class FashionItemPredictionDataset(Dataset):
         for image_filename in sample['incomplete_outfit_path']:
             try:
                 image = Image.open(os.path.join(self.image_dir, image_filename)).convert('RGB')
-                image = image_transform(image)
                 images.append(image)
             except:
                 print(f"error reading {os.path.join(self.image_dir, image_filename)}")
+        if len(images) > 1:
+            merged_image_path = os.path.join(self.merged_image_dir, f"{sample['id']}.jpg")
+            if not os.path.exists(merged_image_path):
+                merged_image = self.merge_images(images)
+                merged_image.save(merged_image_path)
+            else:
+                merged_image = Image.open(merged_image_path)
+            merged_image = image_transform(merged_image, resolution=self.resolution)
+        elif len(images) == 1:
+            merged_image = image_transform(images[0], resolution=self.resolution)
+        else:
+            merged_image = None
 
         data_dict = preprocess_v0([sample["conversations"]], self.tokenizer)
 
@@ -200,9 +222,33 @@ class FashionItemPredictionDataset(Dataset):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0],
                              input_ids_system=data_dict["input_ids_system"][0],
-                             images=torch.stack(images))
-
+                             images=merged_image)
         return data_dict
+
+    @staticmethod
+    def merge_images(images_list, background_size=(582, 582)):
+        """
+        将多张图片合成到一张图上
+        images_list: 图片列表 (PIL Images)
+        background_size: 背景图大小, 默认582x582可以放下3张291x291的图
+        排列方式：左上、右上、左下
+        """
+        assert len(images_list) < 5
+        # 创建白色背景
+        background = Image.new('RGB', background_size, (255, 255, 255))
+
+        # 定义位置
+        positions = [
+            (0, 0),  # 左上
+            (291, 0),  # 右上
+            (0, 291)  # 左下
+        ]
+
+        # 把图片贴到对应位置
+        for img, pos in zip(images_list[:3], positions):  # 只取前3张图
+            background.paste(img, pos)
+
+        return background
 
 
 def collate_fn(
@@ -244,51 +290,94 @@ def collate_fn(
         input_ids_system=input_ids_system,
     )
 
-    if 'image' in instances[0]:
-        images = [instance['image'] for instance in instances]
-        if all(x is not None and x.shape == images[0].shape for x in images):
-            batch['images'] = torch.stack(images)
-        else:
-            batch['images'] = images
+    images = [instance['images'] for instance in instances]
+    if all(x is not None and x.shape == images[0].shape for x in images):
+        batch['images'] = torch.stack(images, dim=0)
 
     return batch
 
 
-class FashionItemPredictionDataloader:
-    def __init__(self, tokenizer, batch_size, num_workers, world_size, local_rank, max_length, phase):
-        self.tokenizer = tokenizer
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        self.world_size = world_size
-        self.local_rank = local_rank
-        self.max_length = max_length
-        self.phase = phase
+# class GroupedDistributedSampler(DistributedSampler):
+#     def __iter__(self):
+#         # 按图片数量分组
+#         groups = {}
+#         for idx in range(len(self.dataset)):
+#             num_images = len(self.dataset.samples[idx]['incomplete_outfit_path'])
+#             if num_images not in groups:
+#                 groups[num_images] = []
+#             groups[num_images].append(idx)
+#
+#         # 如果需要shuffle，对每组分别打乱
+#         if self.shuffle:
+#             g = torch.Generator()
+#             g.manual_seed(self.seed + self.epoch)
+#             for k in groups:
+#                 indices = torch.tensor(groups[k])
+#                 perm = torch.randperm(len(indices), generator=g)
+#                 groups[k] = indices[perm].tolist()
+#
+#         # 将所有组的索引合并
+#         indices = []
+#         for k in sorted(groups.keys()):  # 按图片数量排序，保证顺序一致性
+#             indices.extend(groups[k])
+#
+#         # 处理数据划分
+#         if not self.drop_last:
+#             # add extra samples to make it evenly divisible
+#             padding_size = self.total_size - len(indices)
+#             if padding_size <= len(indices):
+#                 indices += indices[:padding_size]
+#             else:
+#                 indices += (indices * math.ceil(padding_size / len(indices)))[:padding_size]
+#         else:
+#             # remove tail of data to make it evenly divisible.
+#             indices = indices[:self.total_size]
+#         assert len(indices) == self.total_size
+#
+#         # subsample
+#         indices = indices[self.rank:self.total_size:self.num_replicas]
+#         assert len(indices) == self.num_samples
+#
+#         return iter(indices)
 
-    def get_dataloader(self):
-        train_dataset = FashionItemPredictionDataset(
-            self.tokenizer,
-            self.phase,
-        )
-        datasampler = DistributedSampler(
-            train_dataset,
-            num_replicas=self.world_size,
-            rank=self.local_rank
-        )
 
-        dataloader = torch.utils.data.DataLoader(
-            train_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=True,
-            collate_fn=partial(
-                collate_fn,
-                tokenizer=self.tokenizer,
-                max_length=self.max_length,
-            ),
-            sampler=datasampler
-        )
+def get_fashion_item_prediction_dataloader(
+    root_dir,
+    data_file_path,
+    tokenizer,
+    batch_size=5,
+    num_workers=1,
+    world_size=1,
+    local_rank=0,
+    max_length=381,
+    resolution=512,
+):
+    train_dataset = FashionItemPredictionDataset(
+        root_dir,
+        data_file_path,
+        tokenizer,
+        resolution=resolution
+    )
+    datasampler = DistributedSampler(
+        train_dataset,
+        num_replicas=world_size,
+        rank=local_rank
+    )
 
-        return dataloader
+    dataloader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True,
+        collate_fn=partial(
+            collate_fn,
+            tokenizer=tokenizer,
+            max_length=max_length,
+        ),
+        sampler=datasampler
+    )
+
+    return dataloader
 
 
 if __name__ == '__main__':
@@ -322,13 +411,13 @@ if __name__ == '__main__':
     # )
     # x = dataset[0]
     dataloader = FashionItemPredictionDataloader(
+        "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore",
         tokenizer,
-        batch_size=2,
+        batch_size=10,
         num_workers=0,
         world_size=1,
         local_rank=0,
-        max_length=1024,
-        phase="tuning"
-    )
-    x = next(iter(dataloader))
-    a = 1
+        max_length=381,
+    ).get_dataloader()
+    for x in dataloader:
+        print(x['images'].size())

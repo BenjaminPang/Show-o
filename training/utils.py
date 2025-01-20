@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from typing import Any, List, Tuple, Union
+from torchvision import transforms
 
 
 ##################################################
@@ -175,7 +176,7 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-from torchvision import transforms
+
 def image_transform(image, resolution=256, normalize=True):
     image = transforms.Resize(resolution, interpolation=transforms.InterpolationMode.BICUBIC)(image)
     image = transforms.CenterCrop((resolution, resolution))(image)

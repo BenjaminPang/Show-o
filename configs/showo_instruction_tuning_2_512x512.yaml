@@ -6,7 +6,7 @@ wandb:
 experiment:
     project: "tuning"
     name: "show-o-tuning-stage2-512x512"
-    output_dir: "show-o-tuning-stage2-512x512"
+    output_dir: "outputs/show-o-tuning-stage2-512x512"
     max_train_examples_t2i: 20000000
     max_train_examples_mmu: 40000000
     save_every: 10000
@@ -22,8 +22,8 @@ model:
         vq_model_name: "showlab/magvitv2"
 
     showo:
-        load_from_showo: False
-        pretrained_model_path: "showlab/show-o"
+        load_from_showo: True
+        pretrained_model_path: "showlab/show-o-512x512"
         w_clip_vit: False
         vocab_size: 58498
         llm_vocab_size: 50295
@@ -35,7 +35,7 @@ model:
     gradient_checkpointing: True
 
 dataset:
-    gen_type: "t2i"
+    gen_type: "t2i_fashion"
     und_type: "llava_tuning"
     combined_loader_mode: "min_size"
     add_system_prompt: False
@@ -47,18 +47,17 @@ dataset:
                                         "/mnt/bn/vgfm2/test_mlx/xavier/data/XData-4/XData-4-{000000..000009}.tar",
 #                                        "/mnt/bn/vgfm/JourneyDB/JourneyDB/data/train/imgs/{000..199}.tgz",
         ]
-        train_mmu_shards_path_or_url: [ "/mnt/bn/vgfm2/test_mlx/xavier/data/SA1B2/sa_{000000..000999}.tar",
-                                        "/mnt/bn/vgfm/cc12m/images/{00000..01242}.tar",
-                                        "/mnt/bn/vgfm/laion5b/laion-aesthetics-12m-images/{00000..01209}.tar" ]
+        train_mmu_shards_path_or_url: ["/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore/instruct/fashion_recommendation_qa_3.json"]
         train_lm_shards_path_or_url: "/mnt/bn/vgfm2/test_mlx/xavier/data/falcon-refinedweb/data/*.parquet"
         add_caption_prompt: True
         external_caption_path: "/mnt/bn/vgfm2/test_mlx/xavier/data/SAM-LLaVA-Captions10M"
         external_journeydb_caption_path: "/mnt/bn/vgfm2/test_mlx/xavier/code/3062/open_muse/train_journeydb_anno.json"
         external_laion12m_caption_path: "/mnt/bn/vgfm/laion5b/laion-aesthetics-12m-captions"
         external_cc12m_caption_path: '/mnt/bn/vgfm/cc12m/captions/'
+        external_fashion_dataset_path: '/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore'
         validation_prompts_file: "validation_prompts/showoprompts.txt"
         shuffle_buffer_size: 1000
-        num_workers: 32
+        num_workers: 0
         resolution: 512
         pin_memory: True
         persistent_workers: True

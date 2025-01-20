@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # 初始化推理类
 showo_model = ShowoModel(
-    config="configs/showo_demo_512x512_wo_llava_tuning.yaml",
+    config="configs/showo_demo_512x512.yaml",
     max_new_tokens=1000,
     temperature=0.8,
     top_k=1,

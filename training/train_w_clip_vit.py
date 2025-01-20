@@ -334,8 +334,8 @@ def main():
     elif config.dataset.gen_type == "t2i_fashion":
         from fashion_data import FashionDataset
         dataset = FashionDataset(
-            root=dataset_config.train_t2i_shards_path_or_url,
-            caption_file_path=dataset_config.external_caption_path,
+            root=dataset_config.external_fashion_dataset_path,
+            resolution=dataset_config.preprocessing.resolution
         )
         if accelerator.num_processes > 1:
             sampler = DistributedSampler(

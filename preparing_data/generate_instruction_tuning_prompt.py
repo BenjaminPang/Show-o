@@ -392,7 +392,7 @@ if __name__ == '__main__':
             # 打印进度
             elapsed_time = time.time() - start_time
             print(f"\nProcessed {i + 1} samples in {elapsed_time:.2f} seconds")
-            print(f'Results saved to {os.path.join(working_dir, "datasets/polyvore/instruct", "fashion_recommendation_qa.json")}')
+            print(f'Results saved to {os.path.join(working_dir, "datasets/polyvore/instruct", f"fashion_recommendation_qa_{n_incomplete}.json")}')
             print(f"Errors saved to {error_log_path}")
 
     # 保存最终结果
