@@ -647,7 +647,7 @@ def main():
                 loss = loss_mmu
 
                 # avg_masking_rate = accelerator.gather(mask_prob.repeat(config.training.batch_size_t2i)).mean()
-                avg_masking_rate = torch.zeros(0)
+                avg_masking_rate = torch.zeros(1)
 
                 accelerator.backward(loss)
 

@@ -90,7 +90,7 @@ training:
     noise_type: "mask"
     batch_size_t2i: 5
     batch_size_lm: 2
-    batch_size_mmu: 5
+    batch_size_mmu: 2
 #    batch_size_t2i: 4
 #    batch_size_lm: 1
 #    batch_size_mmu: 4
