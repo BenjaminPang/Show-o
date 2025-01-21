@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from typing import Any, List, Tuple, Union
 from torchvision import transforms
+from PIL import Image
 
 
 ##################################################
@@ -184,3 +185,28 @@ def image_transform(image, resolution=256, normalize=True):
     if normalize:
         image = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)(image)
     return image
+
+
+def merge_images(images_list, background_size=(582, 582)):
+    """
+    将多张图片合成到一张图上
+    images_list: 图片列表 (PIL Images)
+    background_size: 背景图大小, 默认582x582可以放下3张291x291的图
+    排列方式：左上、右上、左下
+    """
+    assert len(images_list) < 5
+    # 创建白色背景
+    background = Image.new('RGB', background_size, (255, 255, 255))
+
+    # 定义位置
+    positions = [
+        (0, 0),  # 左上
+        (291, 0),  # 右上
+        (0, 291)  # 左下
+    ]
+
+    # 把图片贴到对应位置
+    for img, pos in zip(images_list[:3], positions):  # 只取前3张图
+        background.paste(img, pos)
+
+    return background

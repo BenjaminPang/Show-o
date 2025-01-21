@@ -10,7 +10,7 @@ from PIL import Image
 import torch
 from omegaconf import ListConfig
 
-from training.utils import image_transform
+from training.utils import image_transform, merge_images
 from llava import conversation as conversation_lib
 
 
@@ -206,7 +206,7 @@ class FashionItemPredictionDataset(Dataset):
         if len(images) > 1:
             merged_image_path = os.path.join(self.merged_image_dir, f"{sample['id']}.jpg")
             if not os.path.exists(merged_image_path):
-                merged_image = self.merge_images(images)
+                merged_image = merge_images(images, background_size=(582, 582))
                 merged_image.save(merged_image_path)
             else:
                 merged_image = Image.open(merged_image_path)
@@ -224,31 +224,6 @@ class FashionItemPredictionDataset(Dataset):
                              input_ids_system=data_dict["input_ids_system"][0],
                              images=merged_image)
         return data_dict
-
-    @staticmethod
-    def merge_images(images_list, background_size=(582, 582)):
-        """
-        将多张图片合成到一张图上
-        images_list: 图片列表 (PIL Images)
-        background_size: 背景图大小, 默认582x582可以放下3张291x291的图
-        排列方式：左上、右上、左下
-        """
-        assert len(images_list) < 5
-        # 创建白色背景
-        background = Image.new('RGB', background_size, (255, 255, 255))
-
-        # 定义位置
-        positions = [
-            (0, 0),  # 左上
-            (291, 0),  # 右上
-            (0, 291)  # 左下
-        ]
-
-        # 把图片贴到对应位置
-        for img, pos in zip(images_list[:3], positions):  # 只取前3张图
-            background.paste(img, pos)
-
-        return background
 
 
 def collate_fn(

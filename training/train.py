@@ -29,6 +29,7 @@ from PIL import Image
 from omegaconf import OmegaConf
 import wandb
 import torch
+from torchvision import transforms
 from torch.optim import AdamW
 from lightning.pytorch.utilities import CombinedLoader
 
@@ -36,6 +37,7 @@ from transformers import AutoTokenizer
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import DistributedType, set_seed
+import ollama
 
 from training.data import Text2ImageDataset
 from training.imagenet_dataset import ImageNetDataset
@@ -52,6 +54,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 from llava.llava_data_vq_unified import get_instruct_data_loader
 from fashion_data import get_fashion_item_prediction_dataloader
+from training.utils import merge_images, image_transform
 
 SYSTEM_PROMPT_LEN = 20
 
@@ -706,7 +709,7 @@ def main():
                     save_checkpoint(model, config, accelerator, global_step + 1)
 
                 if (global_step + 1) % config.experiment.generate_every == 0 and accelerator.is_main_process:
-                    generate_images(
+                    recommend_item(
                         model,
                         vq_model,
                         uni_prompting,
@@ -715,19 +718,28 @@ def main():
                         global_step + 1,
                         mask_schedule=mask_schedule,
                     )
-
-                    visualize_predictions(
-                        model,
-                        vq_model,
-                        uni_prompting,
-                        config,
-                        global_step + 1,
-                        input_ids,
-                        image_tokens_ori,
-                        batch["t2i_flow"]["images"],
-                        texts,
-                        logits,
-                    )
+                    # generate_images(
+                    #     model,
+                    #     vq_model,
+                    #     uni_prompting,
+                    #     accelerator,
+                    #     config,
+                    #     global_step + 1,
+                    #     mask_schedule=mask_schedule,
+                    # )
+                    #
+                    # visualize_predictions(
+                    #     model,
+                    #     vq_model,
+                    #     uni_prompting,
+                    #     config,
+                    #     global_step + 1,
+                    #     input_ids,
+                    #     image_tokens_ori,
+                    #     batch["t2i_flow"]["images"],
+                    #     texts,
+                    #     logits,
+                    # )
 
                 global_step += 1
 
@@ -799,6 +811,203 @@ def visualize_predictions(
 
     model.train()
 
+
+@torch.no_grad()
+def recommend_item(
+    model,
+    vq_model,
+    uni_prompting,
+    accelerator,
+    config,
+    global_step,
+    mask_schedule
+):
+    logger.info("Recommending items...")
+    model.eval()
+    with open("validation_prompts/fitb_test.json", "r") as f:
+        json_file = json.load(f)
+    image_dir = os.path.join(config.dataset.params.external_fashion_dataset_path, "image/291x291")
+
+    wandb_images = []
+    item_descriptions = []
+    target_items = []
+    for sample in json_file:
+        # load target item images
+        try:
+            image = Image.open(os.path.join(image_dir, sample["target_image_path"])).convert('RGB')
+            target_items.append(transforms.Resize(512)(image))
+        except:
+            print(f"error reading {os.path.join(image_dir, sample['target_image_path'])}")
+
+        # load and merge incomplete outfit images
+        item_images = []
+        for image_filename in sample['incomplete_outfit_path']:
+            try:
+                image = Image.open(os.path.join(image_dir, image_filename)).convert('RGB')
+                item_images.append(image)
+            except:
+                print(f"error reading {os.path.join(image_dir, image_filename)}")
+        merged_image_path = os.path.join(config.dataset.params.external_fashion_dataset_path, "image/instruct", f"{sample['id']}.jpg")
+        if not os.path.exists(merged_image_path):
+            merged_image = merge_images(item_images, background_size=(582, 582))
+            merged_image.save(merged_image_path)
+        else:
+            merged_image = Image.open(merged_image_path)
+        image = image_transform(merged_image, resolution=config.dataset.params.resolution).to(accelerator.device)
+        image = image.unsqueeze(0)
+
+        image_tokens = vq_model.get_code(image) + len(uni_prompting.text_tokenizer)
+        question = sample["conversations"][0]["value"]
+
+        input_ids = uni_prompting.text_tokenizer(['USER: \n' + question + ' ASSISTANT:'])['input_ids']
+        input_ids = torch.tensor(input_ids).to(accelerator.device)
+        input_ids = torch.cat([
+            (torch.ones(input_ids.shape[0], 1) * uni_prompting.sptids_dict['<|mmu|>']).to(accelerator.device),
+            (torch.ones(input_ids.shape[0], 1) * uni_prompting.sptids_dict['<|soi|>']).to(accelerator.device),
+            image_tokens,
+            (torch.ones(input_ids.shape[0], 1) * uni_prompting.sptids_dict['<|eoi|>']).to(accelerator.device),
+            (torch.ones(input_ids.shape[0], 1) * uni_prompting.sptids_dict['<|sot|>']).to(accelerator.device),
+            input_ids
+        ], dim=1).long()
+
+        attention_mask = create_attention_mask_for_mmu(
+            input_ids,
+            eoi_id=int(uni_prompting.sptids_dict['<|eoi|>'])
+        )
+
+        if accelerator.mixed_precision == "fp16":
+            weight_dtype = torch.float16
+        elif accelerator.mixed_precision == "bf16":
+            weight_dtype = torch.bfloat16
+        else:
+            weight_dtype = torch.float32
+
+        with torch.autocast("cuda", dtype=weight_dtype, enabled=accelerator.mixed_precision != "no"):
+            cont_toks_list = accelerator.unwrap_model(model).mmu_generate(
+                input_ids, attention_mask=attention_mask,
+                max_new_tokens=200, top_k=1,
+                eot_token=uni_prompting.sptids_dict['<|eot|>']
+            )
+
+        cont_toks_list = torch.stack(cont_toks_list).squeeze()[None]
+
+        pred_answer = uni_prompting.text_tokenizer.batch_decode(cont_toks_list, skip_special_tokens=True)[0]
+        grd_answer = sample["conversations"][1]["value"]
+        wandb_images.append(wandb.Image(merged_image, caption=f"Ground Answer: {grd_answer}\nPredicted Answer: {pred_answer}"))
+
+        # Use predicted answer to generate item image
+        target_cate_str = sample["target_cate_str"]
+        description = ollama.chat(
+            model="phi4",
+            messages=[
+                {'role': 'system',
+                 'content': "You are a fashion item extractor. Extract ONLY the specific recommended item from the "
+                            "provided category (target_cate_str). Create a simple description starting with 'A' or "
+                            "'An', focusing on key features (color, style, material, design elements). Ignore styling "
+                            "suggestions and combinations. Always end with ', white background'. If no description can "
+                            "be extracted, return A {provided category}, white background.",
+                },
+                {
+                    'role': 'user',
+                    'content': "Extract description of women's boot from the following sentences:\nTo complement your "
+                               "striking black and white striped blouse paired with the eye-catching yellow "
+                               "leather-like pants, I suggest opting for sleek ankle boots that echo some elements "
+                               "from the rest of your ensemble. Consider black leather boots to keep it classic and "
+                               "chic, or maybe something with metallic details like gold studs to tie in nicely with "
+                               "your current booties. This would not only match well with both the blazer and pants "
+                               "but also add a cohesive touch while allowing those yellow pants to remain the standout "
+                               "piece.",
+                },
+                {
+                    'role': 'assistant',
+                    'content': "A black leather ankle boots, white background",
+                },
+                {
+                    'role': 'user',
+                    'content': "Extract description of dress from the following sentences:\n  To switch things up for "
+                               "another occasion, I would recommend adding a statement piece to the outfit, such as a "
+                               "statement necklace, statement earrings, or a bold statement bracelet. These "
+                               "accessories can help elevate the look and make it more eye-catching and fashionable. "
+                               "Additionally, you can also consider adding a pop of color to the outfit by wearing "
+                               "bright or contrasting colors, like a bright pink coat or a bold pink shoe. This will help create",
+                },
+                {
+                    'role': 'assistant',
+                    'content': "A dress, white background",
+                },
+                {
+                    'role': 'user',
+                    'content': f"Extract description of {target_cate_str} from the following sentences:\n{pred_answer}"
+                }
+            ]
+        )["message"]["content"]
+        item_descriptions.append(description)
+
+    wandb.log({"Item prediction": wandb_images}, step=global_step)
+
+    # generating item images
+    logger.info("Generating recommended items...")
+    if hasattr(model, 'module'):
+        mask_dtype = model.module.showo.model.embed_tokens.weight.dtype
+    else:
+        mask_dtype = model.showo.model.embed_tokens.weight.dtype
+
+    mask_token_id = config.model.showo.vocab_size - 1
+    image_tokens = torch.ones((len(item_descriptions), config.model.showo.num_vq_tokens), dtype=torch.long,
+                              device=accelerator.device) * mask_token_id
+    input_ids, _ = uni_prompting((item_descriptions, image_tokens), 't2i_gen')
+    config.training.guidance_scale = 5.0
+    if config.training.guidance_scale > 0:
+        uncond_input_ids, _ = uni_prompting(([''] * len(item_descriptions), image_tokens), 't2i_gen')
+        attention_mask = create_attention_mask_predict_next(torch.cat([input_ids, uncond_input_ids], dim=0),
+                                                            pad_id=int(uni_prompting.sptids_dict['<|pad|>']),
+                                                            soi_id=int(uni_prompting.sptids_dict['<|soi|>']),
+                                                            eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']),
+                                                            rm_pad_in_image=True).to(mask_dtype)
+    else:
+        attention_mask = create_attention_mask_predict_next(input_ids,
+                                                            pad_id=int(uni_prompting.sptids_dict['<|pad|>']),
+                                                            soi_id=int(uni_prompting.sptids_dict['<|soi|>']),
+                                                            eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']),
+                                                            rm_pad_in_image=True).to(mask_dtype)
+        uncond_input_ids = None
+
+    with torch.autocast("cuda", dtype=weight_dtype, enabled=accelerator.mixed_precision != "no"):
+        # Generate images
+        gen_token_ids = accelerator.unwrap_model(model).t2i_generate(
+            input_ids=input_ids,
+            uncond_input_ids=uncond_input_ids,
+            attention_mask=attention_mask,
+            guidance_scale=config.training.guidance_scale,
+            temperature=config.training.get("generation_temperature", 1.0),
+            timesteps=config.training.generation_timesteps,
+            noise_schedule=mask_schedule,
+            noise_type=config.training.get("noise_type", "mask"),
+            predict_all_tokens=config.training.get("predict_all_tokens", False),
+            seq_len=config.model.showo.num_vq_tokens,
+            uni_prompting=uni_prompting,
+            config=config,
+        )
+    # In the beginning of training, the model is not fully trained and the generated token ids can be out of range
+    # so we clamp them to the correct range.
+    gen_token_ids = torch.clamp(gen_token_ids, max=accelerator.unwrap_model(model).config.codebook_size - 1, min=0)
+    images = vq_model.decode_code(gen_token_ids)
+
+    model.train()
+
+    if config.training.get("pre_encode", False):
+        del vq_model
+
+    # Convert to PIL images
+    images = torch.clamp((images + 1.0) / 2.0, min=0.0, max=1.0)
+    images *= 255.0
+    images = images.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+
+    pil_images = [np.concatenate((generated_image, np.array(target_image)), axis=1) for generated_image, target_image in zip(images, target_items)]
+
+    # Log images
+    wandb_images = [wandb.Image(image, caption=item_descriptions[i]) for i, image in enumerate(pil_images)]
+    wandb.log({"Generated recommended images": wandb_images}, step=global_step)
 
 @torch.no_grad()
 def generate_images(
