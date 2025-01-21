@@ -7,12 +7,10 @@ from tqdm import tqdm
 import math
 import hashlib
 import time
+import argparse
 
-import torch
 from torch.utils.data import Dataset
-from torchvision import datasets, transforms
 import ollama
-from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 system_message = {
@@ -69,8 +67,6 @@ sample3 = {
         "answer": "Given the classic grey jeans with the brown belt, I'd recommend a sophisticated leather shoe in a rich brown tone to create a cohesive look by coordinating with your belt. Consider an elevated style like a leather Chelsea boot or an open-toe bootie - something with clean lines and quality leather construction. Look for pieces with interesting details like a distinctive sole that adds character while maintaining versatility. The brown leather would not only complement the belt but also add a polished finish to the grey denim."
     }
 }
-# working_dir = "/mnt/d/PostDoc/fifth paper/related work/DiFashion"
-working_dir = "/workspace/DiFashion"
 
 
 def format_message(role, content):
@@ -276,7 +272,20 @@ if __name__ == '__main__':
     # responses = tokenizer.batch_decode(outputs, skip_special_tokens=True)
     # print(responses)
 
-    n_incomplete = 3
+    # 创建参数解析器
+    parser = argparse.ArgumentParser(description='Fashion Item Prediction Instruction Generation')
+
+    # 添加参数
+    parser.add_argument('--working_dir', type=str, default='/workspace/DiFashion',
+                        help='Working directory path')
+    parser.add_argument('--n_incomplete', type=int, default=3,
+                        help='Number of incomplete items')
+
+    # 解析参数
+    args = parser.parse_args()
+
+    working_dir = args.working_dir
+    n_incomplete = args.n_incomplete
     dataset = FashionItemPredictionDataset(
         data_path=os.path.join(working_dir, "datasets/polyvore"),
         tokenizer=None,
@@ -293,8 +302,7 @@ if __name__ == '__main__':
         errors = []
     else:
         with open(error_log_path, 'r', encoding='utf-8') as f:
-            json_data = json.load(f)
-        errors = [x['id'] for x in json_data]
+            errors = json.load(f)
 
     batch_size = 5000
     start_time = time.time()
@@ -370,16 +378,7 @@ if __name__ == '__main__':
             processed_ids.add(sample["id"])
         except Exception as e:
             # 记录错误
-            error_info = {
-                "id": sample_id,
-                "error": str(e),
-                "sample": {
-                    "uid": sample["uid"],
-                    "oid": sample["oid"],
-                    "target_image_path": sample['target_image_path']
-                }
-            }
-            errors.append(error_info)
+            errors.append(sample_id)
 
         # 每处理batch_size个样本保存一次
         if (i + 1) % batch_size == 0:
