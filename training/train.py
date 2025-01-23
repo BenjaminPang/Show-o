@@ -37,7 +37,7 @@ from transformers import AutoTokenizer
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import DistributedType, set_seed
-import ollama
+# import ollama
 
 from training.data import Text2ImageDataset
 from training.imagenet_dataset import ImageNetDataset
@@ -446,7 +446,7 @@ def main():
 
     # Combine these dataloaders into a single iterable model
     iterables = {
-        # "t2i_flow": train_dataloader_t2i,
+        "t2i_flow": train_dataloader_t2i,
         # "lm_flow": train_dataloader_lm ,
         "mmu_flow": train_dataloader_mmu,
     }
@@ -528,33 +528,32 @@ def main():
         model.train()
         for batch, batch_idx, dataloader_idx in combined_dataloader:
             # for loss calculation
-            # batch_size_t2i = batch["t2i_flow"]["images"].shape[0]
+            batch_size_t2i = batch["t2i_flow"]["images"].shape[0]
             # batch_size_lm = len(batch["lm_flow"]["input_ids"])
-            batch_size_t2i = 0
             batch_size_lm = 0
             batch_size_mmu = batch["mmu_flow"]["images"].shape[0]
 
             # *-------*-------*-------*-------*-------*-------*-------*-------*-------*-------*-------*
             # Build formatted sequences for class-conditional/text-to-image generation
             # *-------*-------*-------*-------*-------*-------*-------*-------*-------*-------*-------*
-            # pixel_values, texts = batch["t2i_flow"]["images"], batch["t2i_flow"]["input_ids"]
-            # pixel_values = pixel_values.to(accelerator.device, non_blocking=True)
-            # data_time_m.update(time.time() - end)
+            pixel_values, texts = batch["t2i_flow"]["images"], batch["t2i_flow"]["input_ids"]
+            pixel_values = pixel_values.to(accelerator.device, non_blocking=True)
+            data_time_m.update(time.time() - end)
 
             # Encode images to image tokens, mask them and create input and labels
-            # (
-            #     input_ids,
-            #     labels,
-            #     mask_prob,
-            #     image_tokens_ori
-            # ) = prepare_inputs_and_labels(pixel_values, texts, config.training.min_masking_rate)
-            # attention_mask = create_attention_mask_predict_next(input_ids,
-            #                                                     pad_id=int(uni_prompting.sptids_dict['<|pad|>']),
-            #                                                     soi_id=int(uni_prompting.sptids_dict['<|soi|>']),
-            #                                                     eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']),
-            #                                                     rm_pad_in_image=True,
-            #                                                     return_inverse_mask=True)
-            # attention_mask = attention_mask.to(mask_dtype)
+            (
+                input_ids,
+                labels,
+                mask_prob,
+                image_tokens_ori
+            ) = prepare_inputs_and_labels(pixel_values, texts, config.training.min_masking_rate)
+            attention_mask = create_attention_mask_predict_next(input_ids,
+                                                                pad_id=int(uni_prompting.sptids_dict['<|pad|>']),
+                                                                soi_id=int(uni_prompting.sptids_dict['<|soi|>']),
+                                                                eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']),
+                                                                rm_pad_in_image=True,
+                                                                return_inverse_mask=True)
+            attention_mask = attention_mask.to(mask_dtype)
 
             # *-------*-------*-------*-------*-------*-------*-------*-------*-------*-------*-------*
             # Build formatted sequences for language modeling
@@ -613,12 +612,9 @@ def main():
             attention_mask_mmu = create_attention_mask_for_mmu(input_ids_mmu,
                                                                eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']))
             attention_mask_mmu = attention_mask_mmu.to(mask_dtype)
-            # attention_mask = torch.cat([attention_mask, attention_mask_mmu], dim=0)
-            # input_ids = torch.cat((input_ids, input_ids_mmu.to(input_ids.device)), dim=0)
-            # labels = torch.cat((labels, labels_mmu.to(input_ids.device)), dim=0)
-            attention_mask = attention_mask_mmu
-            input_ids = input_ids_mmu
-            labels = labels_mmu
+            attention_mask = torch.cat([attention_mask, attention_mask_mmu], dim=0)
+            input_ids = torch.cat((input_ids, input_ids_mmu.to(input_ids.device)), dim=0)
+            labels = torch.cat((labels, labels_mmu.to(input_ids.device)), dim=0)
 
             if global_step == 0 and epoch == 0:
                 logger.info("Input ids: {}".format(input_ids))
@@ -641,13 +637,10 @@ def main():
                 avg_loss_t2i = accelerator.gather(loss_t2i.repeat(config.training.batch_size_t2i)).mean()
                 avg_loss_lm = accelerator.gather(loss_lm.repeat(config.training.batch_size_lm)).mean()
                 avg_loss_mmu = accelerator.gather(loss_mmu.repeat(config.training.batch_size_mmu)).mean()
-                # loss = config.training.t2i_coeff * loss_t2i + \
+                loss = config.training.t2i_coeff * loss_t2i + config.training.mmu_coeff * loss_mmu
                 #        config.training.lm_coeff * loss_lm + \
-                #        config.training.mmu_coeff * loss_mmu
-                loss = loss_mmu
 
-                # avg_masking_rate = accelerator.gather(mask_prob.repeat(config.training.batch_size_t2i)).mean()
-                avg_masking_rate = torch.zeros(1)
+                avg_masking_rate = accelerator.gather(mask_prob.repeat(config.training.batch_size_t2i)).mean()
 
                 accelerator.backward(loss)
 
@@ -718,16 +711,16 @@ def main():
                         global_step + 1,
                         mask_schedule=mask_schedule,
                     )
-                    # generate_images(
-                    #     model,
-                    #     vq_model,
-                    #     uni_prompting,
-                    #     accelerator,
-                    #     config,
-                    #     global_step + 1,
-                    #     mask_schedule=mask_schedule,
-                    # )
-                    #
+                    generate_images(
+                        model,
+                        vq_model,
+                        uni_prompting,
+                        accelerator,
+                        config,
+                        global_step + 1,
+                        mask_schedule=mask_schedule,
+                    )
+
                     # visualize_predictions(
                     #     model,
                     #     vq_model,
@@ -896,118 +889,118 @@ def recommend_item(
         wandb_images.append(wandb.Image(merged_image, caption=f"Ground Answer: {grd_answer}\nPredicted Answer: {pred_answer}"))
 
         # Use predicted answer to generate item image
-        target_cate_str = sample["target_cate_str"]
-        description = ollama.chat(
-            model="phi4",
-            messages=[
-                {'role': 'system',
-                 'content': "You are a fashion item extractor. Extract ONLY the specific recommended item from the "
-                            "provided category (target_cate_str). Create a simple description starting with 'A' or "
-                            "'An', focusing on key features (color, style, material, design elements). Ignore styling "
-                            "suggestions and combinations. Always end with ', white background'. If no description can "
-                            "be extracted, return A {provided category}, white background.",
-                },
-                {
-                    'role': 'user',
-                    'content': "Extract description of women's boot from the following sentences:\nTo complement your "
-                               "striking black and white striped blouse paired with the eye-catching yellow "
-                               "leather-like pants, I suggest opting for sleek ankle boots that echo some elements "
-                               "from the rest of your ensemble. Consider black leather boots to keep it classic and "
-                               "chic, or maybe something with metallic details like gold studs to tie in nicely with "
-                               "your current booties. This would not only match well with both the blazer and pants "
-                               "but also add a cohesive touch while allowing those yellow pants to remain the standout "
-                               "piece.",
-                },
-                {
-                    'role': 'assistant',
-                    'content': "A black leather ankle boots, white background",
-                },
-                {
-                    'role': 'user',
-                    'content': "Extract description of dress from the following sentences:\n  To switch things up for "
-                               "another occasion, I would recommend adding a statement piece to the outfit, such as a "
-                               "statement necklace, statement earrings, or a bold statement bracelet. These "
-                               "accessories can help elevate the look and make it more eye-catching and fashionable. "
-                               "Additionally, you can also consider adding a pop of color to the outfit by wearing "
-                               "bright or contrasting colors, like a bright pink coat or a bold pink shoe. This will help create",
-                },
-                {
-                    'role': 'assistant',
-                    'content': "A dress, white background",
-                },
-                {
-                    'role': 'user',
-                    'content': f"Extract description of {target_cate_str} from the following sentences:\n{pred_answer}"
-                }
-            ]
-        )["message"]["content"]
-        item_descriptions.append(description)
+    #     target_cate_str = sample["target_cate_str"]
+    #     description = ollama.chat(
+    #         model="phi4",
+    #         messages=[
+    #             {'role': 'system',
+    #              'content': "You are a fashion item extractor. Extract ONLY the specific recommended item from the "
+    #                         "provided category (target_cate_str). Create a simple description starting with 'A' or "
+    #                         "'An', focusing on key features (color, style, material, design elements). Ignore styling "
+    #                         "suggestions and combinations. Always end with ', white background'. If no description can "
+    #                         "be extracted, return A {provided category}, white background.",
+    #             },
+    #             {
+    #                 'role': 'user',
+    #                 'content': "Extract description of women's boot from the following sentences:\nTo complement your "
+    #                            "striking black and white striped blouse paired with the eye-catching yellow "
+    #                            "leather-like pants, I suggest opting for sleek ankle boots that echo some elements "
+    #                            "from the rest of your ensemble. Consider black leather boots to keep it classic and "
+    #                            "chic, or maybe something with metallic details like gold studs to tie in nicely with "
+    #                            "your current booties. This would not only match well with both the blazer and pants "
+    #                            "but also add a cohesive touch while allowing those yellow pants to remain the standout "
+    #                            "piece.",
+    #             },
+    #             {
+    #                 'role': 'assistant',
+    #                 'content': "A black leather ankle boots, white background",
+    #             },
+    #             {
+    #                 'role': 'user',
+    #                 'content': "Extract description of dress from the following sentences:\n  To switch things up for "
+    #                            "another occasion, I would recommend adding a statement piece to the outfit, such as a "
+    #                            "statement necklace, statement earrings, or a bold statement bracelet. These "
+    #                            "accessories can help elevate the look and make it more eye-catching and fashionable. "
+    #                            "Additionally, you can also consider adding a pop of color to the outfit by wearing "
+    #                            "bright or contrasting colors, like a bright pink coat or a bold pink shoe. This will help create",
+    #             },
+    #             {
+    #                 'role': 'assistant',
+    #                 'content': "A dress, white background",
+    #             },
+    #             {
+    #                 'role': 'user',
+    #                 'content': f"Extract description of {target_cate_str} from the following sentences:\n{pred_answer}"
+    #             }
+    #         ]
+    #     )["message"]["content"]
+    #     item_descriptions.append(description)
 
     wandb.log({"Item prediction": wandb_images}, step=global_step)
 
     # generating item images
-    logger.info("Generating recommended items...")
-    if hasattr(model, 'module'):
-        mask_dtype = model.module.showo.model.embed_tokens.weight.dtype
-    else:
-        mask_dtype = model.showo.model.embed_tokens.weight.dtype
-
-    mask_token_id = config.model.showo.vocab_size - 1
-    image_tokens = torch.ones((len(item_descriptions), config.model.showo.num_vq_tokens), dtype=torch.long,
-                              device=accelerator.device) * mask_token_id
-    input_ids, _ = uni_prompting((item_descriptions, image_tokens), 't2i_gen')
-    config.training.guidance_scale = 5.0
-    if config.training.guidance_scale > 0:
-        uncond_input_ids, _ = uni_prompting(([''] * len(item_descriptions), image_tokens), 't2i_gen')
-        attention_mask = create_attention_mask_predict_next(torch.cat([input_ids, uncond_input_ids], dim=0),
-                                                            pad_id=int(uni_prompting.sptids_dict['<|pad|>']),
-                                                            soi_id=int(uni_prompting.sptids_dict['<|soi|>']),
-                                                            eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']),
-                                                            rm_pad_in_image=True).to(mask_dtype)
-    else:
-        attention_mask = create_attention_mask_predict_next(input_ids,
-                                                            pad_id=int(uni_prompting.sptids_dict['<|pad|>']),
-                                                            soi_id=int(uni_prompting.sptids_dict['<|soi|>']),
-                                                            eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']),
-                                                            rm_pad_in_image=True).to(mask_dtype)
-        uncond_input_ids = None
-
-    with torch.autocast("cuda", dtype=weight_dtype, enabled=accelerator.mixed_precision != "no"):
-        # Generate images
-        gen_token_ids = accelerator.unwrap_model(model).t2i_generate(
-            input_ids=input_ids,
-            uncond_input_ids=uncond_input_ids,
-            attention_mask=attention_mask,
-            guidance_scale=config.training.guidance_scale,
-            temperature=config.training.get("generation_temperature", 1.0),
-            timesteps=config.training.generation_timesteps,
-            noise_schedule=mask_schedule,
-            noise_type=config.training.get("noise_type", "mask"),
-            predict_all_tokens=config.training.get("predict_all_tokens", False),
-            seq_len=config.model.showo.num_vq_tokens,
-            uni_prompting=uni_prompting,
-            config=config,
-        )
-    # In the beginning of training, the model is not fully trained and the generated token ids can be out of range
-    # so we clamp them to the correct range.
-    gen_token_ids = torch.clamp(gen_token_ids, max=accelerator.unwrap_model(model).config.codebook_size - 1, min=0)
-    images = vq_model.decode_code(gen_token_ids)
-
-    model.train()
-
-    if config.training.get("pre_encode", False):
-        del vq_model
-
-    # Convert to PIL images
-    images = torch.clamp((images + 1.0) / 2.0, min=0.0, max=1.0)
-    images *= 255.0
-    images = images.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
-
-    pil_images = [np.concatenate((generated_image, np.array(target_image)), axis=1) for generated_image, target_image in zip(images, target_items)]
-
-    # Log images
-    wandb_images = [wandb.Image(image, caption=item_descriptions[i]) for i, image in enumerate(pil_images)]
-    wandb.log({"Generated recommended images": wandb_images}, step=global_step)
+    # logger.info("Generating recommended items...")
+    # if hasattr(model, 'module'):
+    #     mask_dtype = model.module.showo.model.embed_tokens.weight.dtype
+    # else:
+    #     mask_dtype = model.showo.model.embed_tokens.weight.dtype
+    #
+    # mask_token_id = config.model.showo.vocab_size - 1
+    # image_tokens = torch.ones((len(item_descriptions), config.model.showo.num_vq_tokens), dtype=torch.long,
+    #                           device=accelerator.device) * mask_token_id
+    # input_ids, _ = uni_prompting((item_descriptions, image_tokens), 't2i_gen')
+    # config.training.guidance_scale = 5.0
+    # if config.training.guidance_scale > 0:
+    #     uncond_input_ids, _ = uni_prompting(([''] * len(item_descriptions), image_tokens), 't2i_gen')
+    #     attention_mask = create_attention_mask_predict_next(torch.cat([input_ids, uncond_input_ids], dim=0),
+    #                                                         pad_id=int(uni_prompting.sptids_dict['<|pad|>']),
+    #                                                         soi_id=int(uni_prompting.sptids_dict['<|soi|>']),
+    #                                                         eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']),
+    #                                                         rm_pad_in_image=True).to(mask_dtype)
+    # else:
+    #     attention_mask = create_attention_mask_predict_next(input_ids,
+    #                                                         pad_id=int(uni_prompting.sptids_dict['<|pad|>']),
+    #                                                         soi_id=int(uni_prompting.sptids_dict['<|soi|>']),
+    #                                                         eoi_id=int(uni_prompting.sptids_dict['<|eoi|>']),
+    #                                                         rm_pad_in_image=True).to(mask_dtype)
+    #     uncond_input_ids = None
+    #
+    # with torch.autocast("cuda", dtype=weight_dtype, enabled=accelerator.mixed_precision != "no"):
+    #     # Generate images
+    #     gen_token_ids = accelerator.unwrap_model(model).t2i_generate(
+    #         input_ids=input_ids,
+    #         uncond_input_ids=uncond_input_ids,
+    #         attention_mask=attention_mask,
+    #         guidance_scale=config.training.guidance_scale,
+    #         temperature=config.training.get("generation_temperature", 1.0),
+    #         timesteps=config.training.generation_timesteps,
+    #         noise_schedule=mask_schedule,
+    #         noise_type=config.training.get("noise_type", "mask"),
+    #         predict_all_tokens=config.training.get("predict_all_tokens", False),
+    #         seq_len=config.model.showo.num_vq_tokens,
+    #         uni_prompting=uni_prompting,
+    #         config=config,
+    #     )
+    # # In the beginning of training, the model is not fully trained and the generated token ids can be out of range
+    # # so we clamp them to the correct range.
+    # gen_token_ids = torch.clamp(gen_token_ids, max=accelerator.unwrap_model(model).config.codebook_size - 1, min=0)
+    # images = vq_model.decode_code(gen_token_ids)
+    #
+    # model.train()
+    #
+    # if config.training.get("pre_encode", False):
+    #     del vq_model
+    #
+    # # Convert to PIL images
+    # images = torch.clamp((images + 1.0) / 2.0, min=0.0, max=1.0)
+    # images *= 255.0
+    # images = images.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+    #
+    # pil_images = [np.concatenate((generated_image, np.array(target_image)), axis=1) for generated_image, target_image in zip(images, target_items)]
+    #
+    # # Log images
+    # wandb_images = [wandb.Image(image, caption=item_descriptions[i]) for i, image in enumerate(pil_images)]
+    # wandb.log({"Generated recommended images": wandb_images}, step=global_step)
 
 @torch.no_grad()
 def generate_images(

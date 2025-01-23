@@ -16,16 +16,17 @@ from transformers import AutoTokenizer, CLIPImageProcessor
 
 
 class ShowoModel:
-    def __init__(self, config, temperature, top_k, max_new_tokens):
+    def __init__(self, config, temperature, top_k, max_new_tokens, load_from_showo=True):
         self.config = OmegaConf.load(config)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.temperature = temperature  # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
         self.top_k = top_k  # retain only the top_k most likely tokens, clamp others to have 0 probability
         self.max_new_tokens = max_new_tokens
+        self.load_from_showo = load_from_showo
 
         #param for t2i
         self.save_dir = "generated_images"
-        self.config.training.batch_size = 2
+        self.config.training.batch_size = 3
         self.config.training.guidance_scale = 5
         self.config.training.generation_timesteps = 50
         self._init_models()
@@ -50,13 +51,21 @@ class ShowoModel:
         self.vq_model.requires_grad_(False)
         self.vq_model.eval()
 
-        # 初始化Vision Tower
-        vision_tower_name = "openai/clip-vit-large-patch14-336"
-        self.vision_tower = CLIPVisionTower(vision_tower_name).to(self.device)
-        self.clip_image_processor = CLIPImageProcessor.from_pretrained(vision_tower_name)
+        if self.config.model.showo.w_clip_vit:
+            # 初始化Vision Tower
+            vision_tower_name = "openai/clip-vit-large-patch14-336"
+            self.vision_tower = CLIPVisionTower(vision_tower_name).to(self.device)
+            self.clip_image_processor = CLIPImageProcessor.from_pretrained(vision_tower_name)
 
         # 初始化Showo模型
-        self.model = Showo.from_pretrained(self.config.model.showo.pretrained_model_path).to(self.device)
+        if self.load_from_showo:
+            self.model = Showo.from_pretrained(self.config.model.showo.pretrained_model_path).to(self.device)
+        else:
+            self.model = Showo(**self.config.model.showo).to(self.device)
+            path = os.path.join(self.config.experiment.output_dir, "pytorch_model.bin")
+            print(f"Resuming from checkpoint {path}")
+            state_dict = torch.load(path, map_location=self.device)
+            self.model.load_state_dict(state_dict, strict=False)
         self.model.eval()
         self.mask_token_id = self.model.config.mask_token_id
 
@@ -93,7 +102,6 @@ class ShowoModel:
         return text
 
     def t2i_infer_without_saving(self, prompts: List[str]):
-        output_path = []
         for step in range(0, len(prompts), self.config.training.batch_size):
             batch_prompt = prompts[step:step + self.config.training.batch_size]
             image_tokens = torch.ones((len(batch_prompt), self.config.model.showo.num_vq_tokens),
@@ -144,7 +152,8 @@ class ShowoModel:
             images = torch.clamp((images + 1.0) / 2.0, min=0.0, max=1.0)
             images *= 255.0
             images = images.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
-            return images
+            for image in images:
+                yield image
 
     # 这个的输入应该是tensor，而不是还要再去处理图片读取的问题
     def mmu_infer(self, image_path, question):

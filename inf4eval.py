@@ -19,25 +19,6 @@ from inference_showo import ShowoModel
 from training.prompting_utils import UniversalPrompting
 
 
-# 基础配置
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-# 创建logger
-logger = logging.getLogger(__name__)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# load show-o model
-unified_model = ShowoModel(
-    config="configs/showo_demo_512x512.yaml",
-    max_new_tokens=1000,
-    temperature=0.8,
-    top_k=1,
-)
-
-
 def parse_all_args():
     parser = argparse.ArgumentParser(description="Inference script for show-o model")
     parser.add_argument(
@@ -82,6 +63,11 @@ def parse_all_args():
               "10 = history llama, recommend llama, generate show-o")
     )
     parser.add_argument(
+        "--use_history",
+        action="store_false",
+        help="Whether to use user's history or not."
+    )
+    parser.add_argument(
         "--dataloader_num_workers",
         type=int,
         default=0,
@@ -93,7 +79,7 @@ def parse_all_args():
     return args
 
 
-class ShowoUnderstandingInferenceDataset(Dataset):
+class ShowoHistorySummaryDataset(Dataset):
     def __init__(self, data):
         self.data = data
         resolution = 512
@@ -127,8 +113,9 @@ class ShowoUnderstandingInferenceDataset(Dataset):
 
 
 class ShowoFITBInferenceDataset(Dataset):
-    def __init__(self, data, output_dir, id_cate_dict):
+    def __init__(self, data, output_dir, id_cate_dict, use_history=True):
         self.data = data
+        self.use_history = use_history
         resolution = 512
         self.image_transform = transforms.Compose([
             transforms.Resize(resolution, interpolation=transforms.InterpolationMode.BICUBIC),
@@ -145,8 +132,11 @@ class ShowoFITBInferenceDataset(Dataset):
             ),
             ignore_id=-100, cond_dropout_prob=0.1
         )
-        with open(os.path.join(output_dir, 'history_summary.json')) as f:
-            self.history = json.load(f)
+        if use_history:
+            with open(os.path.join(output_dir, 'history_summary.json')) as f:
+                self.history = json.load(f)
+        else:
+            self.history = []
         self.id_cate_dict = id_cate_dict
 
     def __len__(self):
@@ -157,19 +147,45 @@ class ShowoFITBInferenceDataset(Dataset):
         image = Image.open(image_path).convert("RGB")
         image = self.image_transform(image)
 
-        user_preference = self.history[str(uid)].get(str(cid), "")
         category = self.id_cate_dict[cid]
-        question = (f"What {category} would you recommend to the user that match this partial outfit shown in image. "
-                    f"Try to describe it in detail in one sentence. {user_preference}")
+        if self.use_history:
+            user_preference = self.history[str(uid)].get(str(cid), "")
+            question = (f"What {category} would you recommend to the user that match this partial outfit shown in image. "
+                        f"Try to describe it in detail in one sentence. {user_preference}")
+        else:
+            question = f"I'm putting together this outfit but need some advice on {category}. What would you recommend?"
 
         prompt = self.uni_prompting.text_tokenizer(['USER: \n' + question + ' ASSISTANT:'])['input_ids'][0]
         prompt = torch.tensor(prompt)
-        return uid, oid, image, prompt
+        return uid, oid, image, prompt, cid
 
 
 def main():
-    args = parse_all_args()
+    # 基础配置
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    # 创建logger
+    logger = logging.getLogger(__name__)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    # load show-o model
+    unified_model = ShowoModel(
+        config="configs/showo_demo_512x512.yaml",
+        max_new_tokens=1000,
+        temperature=0.8,
+        top_k=1,
+    )
+    # unified_model = ShowoModel(
+    #     config="outputs/show-o-tuning-stage2-512x512/config_infer.yaml",
+    #     max_new_tokens=1000,
+    #     temperature=0.8,
+    #     top_k=1,
+    #     load_from_showo=False,
+    # )
+    args = parse_all_args()
     logger.info(f"Args: {args}")
     logger.info("Data loading......")
     data_path = os.path.join(args.data_path, args.dataset_name)
@@ -219,7 +235,7 @@ def main():
     os.makedirs(result_output_dir, exist_ok=True)
     # 1. summarize user history
     output_path = os.path.join(result_output_dir, 'history_summary.json')
-    if not os.path.exists(output_path):
+    if not os.path.exists(output_path) and args.use_history:
         # we only need those user-item interaction within fitb test
         user_category_interaction = {}
         for idx, uid in enumerate(test_fitb["uids"]):
@@ -248,7 +264,7 @@ def main():
                                          f"You should start with the user seems to prefer"))
 
         # summarize_history_dataloader = DataLoader(
-        #     ShowoUnderstandingInferenceDataset(item_for_process),
+        #     ShowoHistorySummaryDataset(item_for_process),
         #     batch_size=1,
         #     shuffle=False,
         #     drop_last=False,
@@ -304,51 +320,60 @@ def main():
         recommend_item = {}
 
         # use show-o to recommend item
-        # with torch.no_grad():
-            # fitb_dataloader = DataLoader(
-            #     ShowoFITBInferenceDataset(outfit_to_be_processed, os.path.join(result_output_dir, 'history_summary.json'), id_cate_dict),
-            #     batch_size=1,
-            #     shuffle=False,
-            #     drop_last=False,
-            #     # num_workers=args.dataloader_num_workers,
-            #     num_workers=0
-            # )
-            # for (uids, oids, image, prompt) in tqdm(fitb_dataloader):
-            #     # use show-o to inference
-            #     image = image.to(device)
-            #     prompt = prompt.to(device)
-            #     results = unified_model.mmu_infer_tensor(image, prompt)
-            #     for uid, oid, description in zip(uids, oids, results):
-            #         if uid.item() not in recommend_item.keys():
-            #             recommend_item[uid.item()] = {}
-            #         recommend_item[uid.item()][oid.item()] = str(description)
+        with torch.no_grad():
+            fitb_dataloader = DataLoader(
+                ShowoFITBInferenceDataset(outfit_to_be_processed, result_output_dir, id_cate_dict, use_history=args.use_history),
+                batch_size=1,
+                shuffle=False,
+                drop_last=False,
+                # num_workers=args.dataloader_num_workers,
+                num_workers=0
+            )
+            for (uids, oids, image, prompt, cids) in tqdm(fitb_dataloader):
+                # use show-o to inference
+                image = image.to(device)
+                prompt = prompt.to(device)
+                # use showo to generate recommendations and reasons
+                results = unified_model.mmu_infer_tensor(image, prompt)
+
+                for uid, oid, result, cid in zip(uids, oids, results, cids):
+                    # use phi4 to extract recommended item descriptions
+                    target_cate_str = id_cate_dict[cid.item()]
+                    description = extract_item_description_via_phi4(result, target_cate_str)
+                    if uid.item() not in recommend_item.keys():
+                        recommend_item[uid.item()] = {}
+                    recommend_item[uid.item()][oid.item()] = str(description)
+                    print(f"For incomplete outfit {uid}_{oid}, we recommend {description}. Original showo output is: {result}.")
+
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(recommend_item, f, ensure_ascii=False, indent=2)
 
         # use llama to recommend item
-        with open(os.path.join(result_output_dir, 'history_summary.json')) as f:
-            history = json.load(f)
-        for (uid, oid, partial_outfit_path, cid) in tqdm(outfit_to_be_processed):
-            user_preference = history[str(uid)].get(str(cid), "")
-            category = id_cate_dict[cid]
-            prompt = (
-                f"Generate a brief visual description of a {category} in one sentence that matches this partial outfit. "
-                f"User preference: {user_preference}. "
-                "Only describe the item's appearance using attributes like color, pattern, style, material, and design details. "
-                "DO NOT include any explanations, recommendations, or other text. "
-            )
-            response = ollama.chat(
-                model='llama3.2-vision',
-                messages=[{
-                    'role': 'user',
-                    'content': prompt,
-                    'images': [partial_outfit_path]
-                }]
-            )
-            if uid not in recommend_item.keys():
-                recommend_item[uid] = {}
-            recommend_item[int(uid)][int(oid)] = response["message"]["content"]
-
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(recommend_item, f, ensure_ascii=False, indent=2)
+        # with open(os.path.join(result_output_dir, 'history_summary.json')) as f:
+        #     history = json.load(f)
+        # for (uid, oid, partial_outfit_path, cid) in tqdm(outfit_to_be_processed):
+        #     user_preference = history[str(uid)].get(str(cid), "")
+        #     category = id_cate_dict[cid]
+        #     prompt = (
+        #         f"Generate a brief visual description of a {category} in one sentence that matches this partial outfit. "
+        #         f"User preference: {user_preference}. "
+        #         "Only describe the item's appearance using attributes like color, pattern, style, material, and design details. "
+        #         "DO NOT include any explanations, recommendations, or other text. "
+        #     )
+        #     response = ollama.chat(
+        #         model='llama3.2-vision',
+        #         messages=[{
+        #             'role': 'user',
+        #             'content': prompt,
+        #             'images': [partial_outfit_path]
+        #         }]
+        #     )
+        #     if uid not in recommend_item.keys():
+        #         recommend_item[uid] = {}
+        #     recommend_item[int(uid)][int(oid)] = response["message"]["content"]
+        #
+        # with open(output_path, 'w', encoding='utf-8') as f:
+        #     json.dump(recommend_item, f, ensure_ascii=False, indent=2)
 
     # generate recommended item image based on description
     output_path = os.path.join(args.output_dir, "eval-test", f"{args.task}-checkpoint-{args.ckpt}-cate12.0-mutual5.0-hist4.0", "images")
@@ -360,7 +385,8 @@ def main():
     grd_file_save_path = os.path.join(args.output_dir, "eval-test", "FITB-grd-new.npy")
     with open(recommend_item_path, 'r', encoding='utf-8') as f:
         recommend_item = json.load(f)
-    for uid, value in tqdm(recommend_item.items()):
+    prompt_list, save_path_list = [], []
+    for uid, value in recommend_item.items():
         if uid not in gen_file:
             gen_file[uid] = {}
             grd_file[uid] = {}
@@ -369,17 +395,13 @@ def main():
             category_id = test_fitb['category'][outfit_index][test_fitb['outfits'][outfit_index].tolist().index(0)].item()
             category = id_cate_dict[category_id]
             # use show-o to generate image
-            prompt = f"An image of {category}. {description}. white background, product image, high quality"
+            prompt = f"{description}, product image, high quality"
 
-            save_path = os.path.join(output_path, uid, oid)
-            os.makedirs(save_path, exist_ok=True)
-            image_path = os.path.join(save_path, "0.jpg")
+            image_path = os.path.join(output_path, f"{uid}_{oid}_pred.jpg")
+
             if not os.path.exists(image_path):
-                generated_image = unified_model.t2i_infer_without_saving([prompt])[0]
-                generated_image = Image.fromarray(generated_image)
-                generated_image.save(image_path)
-            # shutil.copy(f"../output/polyvore/DiFashion/eval-test/FITB-checkpoint-15000-cate12.0-mutual5.0-hist4.0/images/{uid}/{oid}/grd.jpg",
-            #             os.path.join(save_path, "grd.jpg"))
+                prompt_list.append(prompt)
+                save_path_list.append(image_path)
 
             outfit_result = {'cates': [torch.tensor(category_id, dtype=torch.int64)],
                              'full_cate': test_fitb['category'][outfit_index],
@@ -387,12 +409,24 @@ def main():
                              'image_paths': [image_path]}
             gen_file[uid][oid] = outfit_result
 
-            replaced_item_index = test_fitb['outfits'][10].tolist().index(0)
+            replaced_item_index = test_fitb['outfits'][outfit_index].tolist().index(0)
             replaced_item_id = test_grd[int(oid)]['outfits'][replaced_item_index]
             grd_file[uid][oid] = {
                 'outfits': test_grd[int(oid)]['outfits'],
                 'image_paths': [os.path.join(args.img_folder_path, all_item_image_path[replaced_item_id])],
             }
+
+    if len(prompt_list) > 0:
+        for generated_image, save_path in tqdm(zip(unified_model.t2i_infer_without_saving(prompt_list), save_path_list), total=len(prompt_list)):
+            image = Image.fromarray(generated_image)
+            image.save(save_path)
+
+            filename_without_ext = os.path.splitext(os.path.basename(save_path))[0]
+            uid, oid, _ = filename_without_ext.split("_")
+            incomplete_outfit_path = os.path.join(fitb_merge_save_path, f"{uid}_{oid}.jpg")
+            target_item_path = grd_file[uid][oid]["image_paths"][0]
+            shutil.copy(incomplete_outfit_path, os.path.join(output_path, f"{uid}_{oid}_outfit.jpg"))
+            shutil.copy(target_item_path, os.path.join(output_path, f"{uid}_{oid}_grd.jpg"))
 
     np.save(gen_file_save_path, gen_file)
     np.save(grd_file_save_path, grd_file)
@@ -442,6 +476,53 @@ def merge_images_and_save(images, path):
     final_image = merged_image.resize((512, 512), Image.LANCZOS)
     final_image.save(path)
 
+
+def extract_item_description_via_phi4(pred_answer, target_cate_str):
+    description = ollama.chat(
+        model="phi4",
+        messages=[
+            {'role': 'system',
+             'content': "You are a fashion item extractor. Extract ONLY the specific recommended item from the "
+                        "provided category (target_cate_str). Create a simple description starting with 'A' or "
+                        "'An', focusing on key features (color, style, material, design elements). Ignore styling "
+                        "suggestions and combinations. Always end with ', white background'. If no description can "
+                        "be extracted, return A {provided category}, white background.",
+             },
+            {
+                'role': 'user',
+                'content': "Extract description of women's boot from the following sentences:\nTo complement your "
+                           "striking black and white striped blouse paired with the eye-catching yellow "
+                           "leather-like pants, I suggest opting for sleek ankle boots that echo some elements "
+                           "from the rest of your ensemble. Consider black leather boots to keep it classic and "
+                           "chic, or maybe something with metallic details like gold studs to tie in nicely with "
+                           "your current booties. This would not only match well with both the blazer and pants "
+                           "but also add a cohesive touch while allowing those yellow pants to remain the standout "
+                           "piece.",
+            },
+            {
+                'role': 'assistant',
+                'content': "A black leather ankle boots, white background",
+            },
+            {
+                'role': 'user',
+                'content': "Extract description of dress from the following sentences:\n  To switch things up for "
+                           "another occasion, I would recommend adding a statement piece to the outfit, such as a "
+                           "statement necklace, statement earrings, or a bold statement bracelet. These "
+                           "accessories can help elevate the look and make it more eye-catching and fashionable. "
+                           "Additionally, you can also consider adding a pop of color to the outfit by wearing "
+                           "bright or contrasting colors, like a bright pink coat or a bold pink shoe. This will help create",
+            },
+            {
+                'role': 'assistant',
+                'content': "A dress, white background",
+            },
+            {
+                'role': 'user',
+                'content': f"Extract description of {target_cate_str} from the following sentences:\n{pred_answer}"
+            }
+        ]
+    )["message"]["content"]
+    return description
 
 if __name__ == "__main__":
     main()

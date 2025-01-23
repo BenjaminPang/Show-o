@@ -14,7 +14,7 @@ experiment:
     generate_every: 1000
     log_every: 50
     log_grad_norm_every: 500
-    resume_from_checkpoint: 'latest'
+    resume_from_checkpoint: null
 
 model:
     vq_model:
@@ -88,7 +88,7 @@ lr_scheduler:
 training:
     gradient_accumulation_steps: 1
     noise_type: "mask"
-    batch_size_t2i: 5
+    batch_size_t2i: 1
     batch_size_lm: 2
     batch_size_mmu: 2
 #    batch_size_t2i: 4

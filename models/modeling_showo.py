@@ -80,11 +80,10 @@ class Showo(ModelMixin, ConfigMixin):
         if labels is not None:
             # 1. Mask token prediction (discrete diffusion) for image generation
             # Note that, max_seq_length indicates the maximum number of text tokens, maybe a bit confused.
-            # loss_t2i = F.cross_entropy(
-            #     logits[:batch_size_t2i, max_seq_length + 1:].contiguous().view(-1, self.output_size),
-            #     labels[:batch_size_t2i, max_seq_length + 1:].contiguous().view(-1), ignore_index=-100,
-            # )
-            loss_t2i = torch.tensor(0.0, device=logits.device)
+            loss_t2i = F.cross_entropy(
+                logits[:batch_size_t2i, max_seq_length + 1:].contiguous().view(-1, self.output_size),
+                labels[:batch_size_t2i, max_seq_length + 1:].contiguous().view(-1), ignore_index=-100,
+            )
 
             # 2. Next token prediction for language modeling
             # loss_lm = F.cross_entropy(
