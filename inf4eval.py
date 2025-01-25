@@ -172,19 +172,19 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # load show-o model
-    unified_model = ShowoModel(
-        config="configs/showo_demo_512x512.yaml",
-        max_new_tokens=1000,
-        temperature=0.8,
-        top_k=1,
-    )
     # unified_model = ShowoModel(
-    #     config="outputs/show-o-tuning-stage2-512x512/config_infer.yaml",
+    #     config="configs/showo_demo_512x512.yaml",
     #     max_new_tokens=1000,
     #     temperature=0.8,
     #     top_k=1,
-    #     load_from_showo=False,
     # )
+    unified_model = ShowoModel(
+        config="outputs/show-o-tuning-stage2-512x512/config_infer.yaml",
+        max_new_tokens=1000,
+        temperature=0.8,
+        top_k=1,
+        load_from_showo=False,
+    )
     args = parse_all_args()
     logger.info(f"Args: {args}")
     logger.info("Data loading......")

@@ -35,24 +35,18 @@ model:
     gradient_checkpointing: True
 
 dataset:
-    gen_type: "t2i_fashion"
+    gen_type: "t2i"
     und_type: "llava_tuning"
     combined_loader_mode: "min_size"
     add_system_prompt: False
     params:
-        train_t2i_shards_path_or_url: [
-            "/mnt/bn/vgfm2/test_mlx/xavier/data/XData/XData-{000000..000009}.tar",
-            "/mnt/bn/vgfm2/test_mlx/xavier/data/XData-2/XData-2-{000000..000009}.tar",
-            "/mnt/bn/vgfm2/test_mlx/xavier/data/XData-3/XData-3-{000000..000024}.tar",
-            "/mnt/bn/vgfm2/test_mlx/xavier/data/XData-4/XData-4-{000000..000009}.tar",
-            # "/mnt/bn/vgfm/JourneyDB/JourneyDB/data/train/imgs/{000..199}.tgz",
-        ]
+        train_t2i_shards_path_or_url: [ "/workspace/DiFashion/datasets/laion2B-en-aesthetic/data/{00000..00040}.tar" ]
         train_mmu_shards_path_or_url: ["/workspace/DiFashion/datasets/polyvore/instruct/fashion_recommendation_qa_3.json"]
         train_lm_shards_path_or_url: "/mnt/bn/vgfm2/test_mlx/xavier/data/falcon-refinedweb/data/*.parquet"
         add_caption_prompt: True
-        external_caption_path: "/mnt/bn/vgfm2/test_mlx/xavier/data/SAM-LLaVA-Captions10M"
-        external_journeydb_caption_path: "/mnt/bn/vgfm2/test_mlx/xavier/code/3062/open_muse/train_journeydb_anno.json"
-        external_laion12m_caption_path: "/mnt/bn/vgfm/laion5b/laion-aesthetics-12m-captions"
+        external_caption_path: ""
+        external_journeydb_caption_path: ""
+        external_laion12m_caption_path: ""
         external_cc12m_caption_path: '/mnt/bn/vgfm/cc12m/captions/'
         external_fashion_dataset_path: '/workspace/DiFashion/datasets/polyvore'
         validation_prompts_file: "validation_prompts/showoprompts.txt"
