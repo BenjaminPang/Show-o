@@ -377,6 +377,8 @@ def main():
 
     # generate recommended item image based on description
     output_path = os.path.join(args.output_dir, "eval-test", f"{args.task}-checkpoint-{args.ckpt}-cate12.0-mutual5.0-hist4.0", "images")
+    if not os.path.exists(output_path):
+        os.mkdir(output_path)
     recommend_item_path = os.path.join(result_output_dir, "fitb_recommend_item.json")
 
     gen_file = {}
