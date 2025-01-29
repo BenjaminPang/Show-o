@@ -42,7 +42,7 @@ dataset:
     params:
         train_t2i_shards_path_or_url: [
           # "/workspace/DiFashion/datasets/laion2B-en-aesthetic/data/{00000..00040}.tar",
-          "/workspace/DiFashion/datasets/JourneyDB/data/train/imgs/{000...008}.tgz"
+          "/workspace/DiFashion/datasets/JourneyDB/data/train/imgs/{000..008}.tgz"
         ]
         train_mmu_shards_path_or_url: ["/workspace/DiFashion/datasets/polyvore/instruct/fashion_recommendation_qa_3.json"]
         train_lm_shards_path_or_url: "/mnt/bn/vgfm2/test_mlx/xavier/data/falcon-refinedweb/data/*.parquet"
