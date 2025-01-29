@@ -270,32 +270,33 @@ class Text2ImageDataset:
 
             return sample
 
-        elif 'laion' in sample['__url__']:
-            captionf = f"{self.external_laion12m_caption_path}/{sample['__url__'].split('/')[-1].split('.')[0]}/{sample['__key__']}.caption"
-            if os.path.exists(captionf):
-                with open(captionf, "r") as reader:
-                    captions = reader.readlines()[0].replace('\n', '')
-            else:
-                captions = ""
-
-            # for captioning
-            if self.is_captioning:
-                if self.add_caption_prompt is not None:
-                    prompt = random.sample(self.caption_prompt, 1)[0]
-                    sample['txt'] = prompt + ' ' + captions
-                else:
-                    sample['txt'] = captions
-            # for generation
-            else:
-                # randomly choose short and long captions
-                if random.random() < 0.5:
-                    sample['txt'] = captions.split('.')[0]
-                else:
-                    sample['txt'] = captions
-
-                sample['txt'] = remove_prefix(sample['txt'])
-
-            return sample
+        # we don't need this code because we automatically load caption using webdataset
+        # elif 'laion' in sample['__url__']:
+        #     captionf = f"{self.external_laion12m_caption_path}/{sample['__url__'].split('/')[-1].split('.')[0]}/{sample['__key__']}.caption"
+        #     if os.path.exists(captionf):
+        #         with open(captionf, "r") as reader:
+        #             captions = reader.readlines()[0].replace('\n', '')
+        #     else:
+        #         captions = ""
+        #
+        #     # for captioning
+        #     if self.is_captioning:
+        #         if self.add_caption_prompt is not None:
+        #             prompt = random.sample(self.caption_prompt, 1)[0]
+        #             sample['txt'] = prompt + ' ' + captions
+        #         else:
+        #             sample['txt'] = captions
+        #     # for generation
+        #     else:
+        #         # randomly choose short and long captions
+        #         if random.random() < 0.5:
+        #             sample['txt'] = captions.split('.')[0]
+        #         else:
+        #             sample['txt'] = captions
+        #
+        #         sample['txt'] = remove_prefix(sample['txt'])
+        #
+        #     return sample
 
         elif 'cc12m' in sample['__url__']:
             captionf = f"{self.external_cc12m_caption_path}/{sample['__url__'].split('/')[-1].split('.')[0]}/{sample['__key__'].split('/')[-1]}.caption"

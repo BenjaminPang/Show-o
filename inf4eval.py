@@ -13,7 +13,6 @@ import numpy as np
 from PIL import Image
 from torchvision import transforms
 from transformers import AutoTokenizer
-from transformers import MllamaForConditionalGeneration, AutoProcessor
 
 from inference_showo import ShowoModel
 from training.prompting_utils import UniversalPrompting
