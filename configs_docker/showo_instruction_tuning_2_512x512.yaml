@@ -40,7 +40,7 @@ dataset:
     combined_loader_mode: "min_size"
     add_system_prompt: False
     params:
-        train_t2i_shards_path_or_url: ["/workspace/DiFashion/datasets/FashionRec/data/fashion_image_generation/{000..0013}.tar",]
+        train_t2i_shards_path_or_url: ["/workspace/DiFashion/datasets/FashionRec/data/fashion_image_generation/{000..013}.tar",]
         train_mmu_shards_path_or_url:  ["/workspace/DiFashion/datasets/FashionRec/data/basic_recommendation/{000..008}.tar",
         "/workspace/DiFashion/datasets/FashionRec/data/personalized_recommendation/{000..020}.tar",
         "/workspace/DiFashion/datasets/FashionRec/data/alternative_recommendation/000.tar"]
