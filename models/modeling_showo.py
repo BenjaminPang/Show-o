@@ -86,10 +86,11 @@ class Showo(ModelMixin, ConfigMixin):
             )
 
             # 2. Next token prediction for language modeling
-            loss_lm = F.cross_entropy(
-                logits[batch_size_t2i:batch_size_t2i + batch_size_lm, :-1].contiguous().view(-1, self.output_size),
-                labels[batch_size_t2i:batch_size_t2i + batch_size_lm, 1:].contiguous().view(-1), ignore_index=-100,
-            )
+            # loss_lm = F.cross_entropy(
+            #     logits[batch_size_t2i:batch_size_t2i + batch_size_lm, :-1].contiguous().view(-1, self.output_size),
+            #     labels[batch_size_t2i:batch_size_t2i + batch_size_lm, 1:].contiguous().view(-1), ignore_index=-100,
+            # )
+            loss_lm = torch.tensor(0.0, device=logits.device)
 
             # 3. Next token prediction for captioning/multimodal understanding
             loss_mmu = F.cross_entropy(
