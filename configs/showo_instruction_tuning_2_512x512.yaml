@@ -10,8 +10,8 @@ experiment:
     max_train_examples_t2i: 20000000
     max_train_examples_mmu: 40000000
     save_every: 10000
-    eval_every: 2500
-    generate_every: 1000
+    eval_every: 10000
+    generate_every: 10000
     log_every: 50
     log_grad_norm_every: 500
     resume_from_checkpoint: null
@@ -40,16 +40,16 @@ dataset:
     combined_loader_mode: "min_size"
     add_system_prompt: False
     params:
-        train_t2i_shards_path_or_url: ["/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/laion2B-en-aesthetic/data/{00000..00040}.tar",
-          "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/JourneyDB/data/train/imgs/000.tgz" ]
-        train_mmu_shards_path_or_url: ["/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore/instruct/fashion_recommendation_qa_3.json"]
-        train_lm_shards_path_or_url: "/mnt/bn/vgfm2/test_mlx/xavier/data/falcon-refinedweb/data/*.parquet"
-        add_caption_prompt: True
-        external_caption_path: "/mnt/bn/vgfm2/test_mlx/xavier/data/SAM-LLaVA-Captions10M"
+#        train_t2i_shards_path_or_url: ["/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/laion2B-en-aesthetic/data/{00000..00040}.tar",
+#        "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/JourneyDB/data/train/imgs/000.tgz"]
+        train_t2i_shards_path_or_url: ["/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/FashionRec/data/fashion_image_generation/{000..001}.tar",]
+        train_mmu_shards_path_or_url: ["/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/FashionRec/data/basic_recommendation/{000..008}.tar",
+        "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/FashionRec/data/personalized_recommendation/{000..020}.tar",
+        "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/FashionRec/data/alternative_recommendation/000.tar"]
+        train_lm_shards_path_or_url: "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/falcon-refinedweb/data/*.parquet"
+        add_caption_prompt: False
         external_journeydb_caption_path: "/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/JourneyDB/data/train/train_journeydb_anno.json"
-        external_laion12m_caption_path: "/mnt/bn/vgfm/laion5b/laion-aesthetics-12m-captions"
-        external_cc12m_caption_path: '/mnt/bn/vgfm/cc12m/captions/'
-        external_fashion_dataset_path: '/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/polyvore'
+        external_fashion_dataset_path: '/mnt/d/PostDoc/fifth paper/related work/DiFashion/datasets/FashionRec/data'
         validation_prompts_file: "validation_prompts/showoprompts.txt"
         shuffle_buffer_size: 1000
         num_workers: 1
@@ -84,7 +84,7 @@ training:
     gradient_accumulation_steps: 1
     noise_type: "mask"
     batch_size_t2i: 1
-    batch_size_lm: 2
+    batch_size_lm: 1
     batch_size_mmu: 1
 #    batch_size_t2i: 4
 #    batch_size_lm: 1
@@ -92,7 +92,7 @@ training:
     mixed_precision: "bf16"
     enable_tf32: True
     seed: 10086
-    max_train_steps: 100000
+    max_train_steps: 300000
     overfit_one_batch: False
     cond_dropout_prob: 0.1
     min_masking_rate: 0.0

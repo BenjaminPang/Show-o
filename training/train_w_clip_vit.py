@@ -296,10 +296,7 @@ def main():
             shuffle_buffer_size=dataset_config.shuffle_buffer_size,
             pin_memory=dataset_config.pin_memory,
             persistent_workers=dataset_config.persistent_workers,
-            external_caption_path=dataset_config.external_caption_path,
             external_journeydb_caption_path=dataset_config.external_journeydb_caption_path,
-            external_laion12m_caption_path=dataset_config.external_laion12m_caption_path,
-            external_cc12m_caption_path=dataset_config.external_cc12m_caption_path,
         )
         train_dataloader_t2i = dataset.train_dataloader
         num_update_steps_per_epoch = math.ceil(
@@ -332,8 +329,8 @@ def main():
         num_update_steps_per_epoch = math.ceil(len(dataset_imagenet) / total_batch_size_t2i)
         num_train_epochs = math.ceil(config.training.max_train_steps / num_update_steps_per_epoch)
     elif config.dataset.gen_type == "t2i_fashion":
-        from fashion_data import FashionDataset
-        dataset = FashionDataset(
+        from fashion_data import FashionImageDataset
+        dataset = FashionImageDataset(
             root=dataset_config.external_fashion_dataset_path,
             resolution=dataset_config.preprocessing.resolution
         )
